@@ -1,0 +1,21 @@
+name: FFCraft
+version: '${project.version}'
+main: sashwind.mc.plugin.ffcraft.FFCraft
+api-version: '1.18'
+load: STARTUP
+authors: [ Sashwind ]
+description: Server-side plugin for FFCraft client mod - manage video players, screens, and playlists
+
+commands:
+  ffcraft:
+    description: FFCraft management commands
+    usage: /ffcraft <create|list|info|rename|delete|setpublic|reload>
+    aliases: [ffc]
+
+permissions:
+  ffcraft.admin:
+    description: Allows creating and deleting video players
+    default: op
+  ffcraft.edit:
+    description: Allows editing video players (screens, playlist, etc.)
+    default: true
