@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.bukkit.plugin.java.JavaPlugin;
+import sashwind.mc.plugin.ffcraft.lang.Messages;
 import sashwind.mc.plugin.ffcraft.model.ServerVideoPlayer;
 
 import java.io.*;
@@ -25,7 +26,7 @@ public class VideoPlayerSavedData {
     private final JavaPlugin plugin;
     private final Path dataFile;
     private final List<ServerVideoPlayer> players;
-    private boolean dirty = false;
+    private volatile boolean dirty = false;
 
     public VideoPlayerSavedData(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -35,7 +36,7 @@ public class VideoPlayerSavedData {
 
     public void load() {
         if (!Files.exists(dataFile)) {
-            plugin.getLogger().info("No saved data found, starting fresh.");
+            plugin.getLogger().info(Messages.get("log.no_saved_data"));
             return;
         }
 
@@ -48,9 +49,9 @@ public class VideoPlayerSavedData {
             }
             players.clear();
             players.addAll(loaded);
-            plugin.getLogger().info("Loaded " + players.size() + " video player(s) from saved data.");
+            plugin.getLogger().info(Messages.get("log.data_loaded", players.size()));
         } catch (Exception e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to load saved data", e);
+            plugin.getLogger().log(Level.SEVERE, Messages.get("log.failed_load"), e);
         }
     }
 
@@ -76,7 +77,7 @@ public class VideoPlayerSavedData {
 
             dirty = false;
         } catch (IOException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to save data", e);
+            plugin.getLogger().log(Level.SEVERE, Messages.get("log.failed_save"), e);
         }
     }
 

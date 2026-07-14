@@ -180,14 +180,9 @@ public final class CodecHelper {
         obj.addProperty("id", player.id().toString());
         obj.addProperty("name", player.name());
         obj.addProperty("isPublic", player.isPublic());
+        obj.addProperty("creator", player.creator().toString());
 
-        JsonArray editorsArr = new JsonArray();
-        for (UUID editor : player.editors()) {
-            editorsArr.add(editor.toString());
-        }
-        obj.add("editors", editorsArr);
-
-        // controlUsers — server-side only, persisted but NOT sent to clients
+        // controlUsers — server-side only
         JsonArray controlArr = new JsonArray();
         for (UUID u : player.controlUsers()) {
             controlArr.add(u.toString());
@@ -212,13 +207,17 @@ public final class CodecHelper {
     }
 
     public static ServerVideoPlayer decodeServerVideoPlayer(JsonObject obj) {
-        JsonArray editorsArr = obj.getAsJsonArray("editors");
-        Set<UUID> editors = new HashSet<>();
-        for (JsonElement e : editorsArr) {
-            editors.add(UUID.fromString(e.getAsString()));
+        // Backward compat: read "creator" or fall back to first element of "editors"
+        UUID creator;
+        if (obj.has("creator")) {
+            creator = UUID.fromString(obj.get("creator").getAsString());
+        } else if (obj.has("editors")) {
+            JsonArray arr = obj.getAsJsonArray("editors");
+            creator = arr.size() > 0 ? UUID.fromString(arr.get(0).getAsString()) : UUID.randomUUID();
+        } else {
+            creator = UUID.randomUUID(); // should not happen
         }
 
-        // controlUsers — load from persisted data (may be absent in older files)
         Set<UUID> controlUsers = new HashSet<>();
         if (obj.has("controlUsers")) {
             for (JsonElement e : obj.getAsJsonArray("controlUsers")) {
@@ -242,7 +241,7 @@ public final class CodecHelper {
             UUID.fromString(obj.get("id").getAsString()),
             obj.get("name").getAsString(),
             obj.get("isPublic").getAsBoolean(),
-            Collections.unmodifiableSet(editors),
+            creator,
             Collections.unmodifiableSet(controlUsers),
             playlist,
             decodePlaybackState(obj.getAsJsonObject("playbackState")),
@@ -258,6 +257,7 @@ public final class CodecHelper {
         obj.addProperty("name", data.name());
         obj.addProperty("isPublic", data.isPublic());
 
+        // Keep "editors" in client protocol for backward compat — just contains creator
         JsonArray editorsArr = new JsonArray();
         for (UUID editor : data.editors()) {
             editorsArr.add(editor.toString());

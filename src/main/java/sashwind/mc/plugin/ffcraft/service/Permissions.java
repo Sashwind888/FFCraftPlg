@@ -31,8 +31,7 @@ public final class Permissions {
     public static boolean canManage(Player player, ServerVideoPlayer vp) {
         if (player == null) return false;
         if (canAdmin(player)) return true;
-        // owner = first editor (creator is always added to editors on create)
-        return !vp.editors().isEmpty() && vp.editors().iterator().next().equals(player.getUniqueId());
+        return vp.creator().equals(player.getUniqueId());
     }
 
     // ── Control (Manage or granted control) ────────
@@ -44,6 +43,16 @@ public final class Permissions {
         if (player.hasPermission(PREFIX + vp.id())) return true;
         // Check persisted controlUsers set
         return vp.controlUsers().contains(player.getUniqueId());
+    }
+
+    // ── View ───────────────────────────────────────
+
+    /** Whether a player can see this video player in lists and syncs.
+     *  Public: everyone. Private: only admin/creator/controlUsers. */
+    public static boolean canView(Player player, ServerVideoPlayer vp) {
+        if (player == null) return false;
+        if (vp.isPublic()) return true;
+        return canControl(player, vp);
     }
 
     // ── Grant / Revoke helpers ─────────────────────

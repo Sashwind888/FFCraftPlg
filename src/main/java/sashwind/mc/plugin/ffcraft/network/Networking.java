@@ -7,6 +7,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.Messenger;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 import sashwind.mc.plugin.ffcraft.data.CodecHelper;
+import sashwind.mc.plugin.ffcraft.lang.Messages;
 import sashwind.mc.plugin.ffcraft.model.*;
 import sashwind.mc.plugin.ffcraft.service.VideoPlayerService;
 
@@ -35,7 +36,7 @@ public class Networking implements PluginMessageListener {
         Messenger messenger = plugin.getServer().getMessenger();
         messenger.registerOutgoingPluginChannel(plugin, CHANNEL);
         messenger.registerIncomingPluginChannel(plugin, CHANNEL, this);
-        plugin.getLogger().info("Registered plugin messaging channel: " + CHANNEL);
+        plugin.getLogger().info(Messages.get("log.channel_registered", CHANNEL));
     }
 
     public void unregister() {
@@ -56,8 +57,8 @@ public class Networking implements PluginMessageListener {
 
             handlePacket(player, type, data);
         } catch (Exception e) {
-            plugin.getLogger().log(Level.WARNING, "Failed to handle plugin message from " + player.getName(), e);
-            sendError(player, "Internal error: " + e.getMessage());
+            plugin.getLogger().log(Level.WARNING, Messages.get("log.failed_handle", player.getName()), e);
+            sendError(player, Messages.get("net.internal_error", player, e.getMessage()));
         }
     }
 
@@ -80,13 +81,13 @@ public class Networking implements PluginMessageListener {
                 case CodecHelper.TYPE_MOVE_VIDEO -> handleMoveVideo(player, data);
                 case CodecHelper.TYPE_GRANT_CONTROL -> handleGrantControl(player, data);
                 case CodecHelper.TYPE_REVOKE_CONTROL -> handleRevokeControl(player, data);
-                default -> plugin.getLogger().warning("Unknown packet type: " + type);
+                default -> plugin.getLogger().warning(Messages.get("net.unknown_type", type));
             }
         } catch (SecurityException e) {
             sendError(player, e.getMessage());
         } catch (Exception e) {
-            plugin.getLogger().log(Level.WARNING, "Error handling packet type: " + type, e);
-            sendError(player, "Error: " + e.getMessage());
+            plugin.getLogger().log(Level.WARNING, Messages.get("log.error_handling", type), e);
+            sendError(player, Messages.get("cmd.error", player, e.getMessage()));
         }
     }
 
@@ -230,19 +231,18 @@ public class Networking implements PluginMessageListener {
 
     // ── Send (filtered per-viewer) ────────────────────
 
-    /** Full sync (same data to everyone — all players are visible). */
+    /** Full sync per-viewer — private players hidden from unauthorized viewers. */
     public void syncAll() {
-        VideoPlayerSnapshot snapshot = service.snapshot();
-        byte[] data = CodecHelper.buildSyncPlayersPacket(snapshot)
-            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
         for (Player viewer : Bukkit.getOnlinePlayers()) {
+            byte[] data = CodecHelper.buildSyncPlayersPacket(service.snapshotFor(viewer))
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
             viewer.sendPluginMessage(plugin, CHANNEL, data);
         }
     }
 
-    /** Full sync to a specific player. */
+    /** Full sync to a specific player, filtered. */
     public void syncTo(Player viewer) {
-        byte[] data = CodecHelper.buildSyncPlayersPacket(service.snapshot())
+        byte[] data = CodecHelper.buildSyncPlayersPacket(service.snapshotFor(viewer))
             .getBytes(java.nio.charset.StandardCharsets.UTF_8);
         viewer.sendPluginMessage(plugin, CHANNEL, data);
     }

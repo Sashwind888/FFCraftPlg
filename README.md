@@ -37,13 +37,22 @@
 | 命令 | 权限 | 说明 |
 |------|------|------|
 | `/ffcraft create <name> [public\|private]` | `ffcraft.admin` | 创建播放器 |
-| `/ffcraft list` | 所有人 | 列出所有播放器 |
-| `/ffcraft info <uuid>` | 所有人 | 查看播放器详情 |
-| `/ffcraft rename <uuid> <newName>` | `ffcraft.edit` | 重命名播放器 |
+| `/ffcraft list` | 所有人 | 列出可查看的播放器（私人播放器仅授权用户可见） |
+| `/ffcraft info <uuid>` | 所有人 | 查看播放器详情（私人播放器需授权） |
+| `/ffcraft rename <uuid> <newName>` | 播放器创建者 / admin | 重命名播放器 |
 | `/ffcraft delete <uuid>` | `ffcraft.admin` | 删除播放器 |
-| `/ffcraft setpublic <uuid> <true\|false>` | `ffcraft.admin` | 设置公开状态 |
-| `/ffcraft setmedia <uuid> <url>` | `ffcraft.edit` | 设置媒体源（计划中） |
-| `/ffcraft reload` | `ffcraft.admin` | 重载配置文件并重新同步客户端 |
+| `/ffcraft setpublic <uuid> <true\|false>` | `ffcraft.admin` | 切换公开/私人模式 |
+| `/ffcraft grant <playerId> <playerName>` | 播放器创建者 / admin | 授予操作权限（播放/暂停/切歌/音量） |
+| `/ffcraft revoke <playerId> <playerName>` | 播放器创建者 / admin | 撤销操作权限 |
+| `/ffcraft reload` | `ffcraft.admin` | 重新同步所有客户端 |
+
+
+| 来源 | 公开播放器 | 私人播放器 |
+|-----|----------|----------|
+|/ffcraft list|所有人可见|仅 creator/admin/controlUsers 可见|
+|/ffcraft info|所有人可见|未授权 → "未找到"|
+|客户端同步|全量推送|按 viewer 过滤后推送|
+
 
 - 权限节点可通过 LuckPerms 等权限插件赋予玩家
 - 所有 `uuid` 参数均指播放器的唯一标识

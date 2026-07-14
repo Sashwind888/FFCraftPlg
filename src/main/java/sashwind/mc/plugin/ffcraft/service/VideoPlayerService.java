@@ -2,6 +2,7 @@ package sashwind.mc.plugin.ffcraft.service;
 
 import org.bukkit.entity.Player;
 import sashwind.mc.plugin.ffcraft.data.VideoPlayerSavedData;
+import sashwind.mc.plugin.ffcraft.lang.Messages;
 import sashwind.mc.plugin.ffcraft.model.*;
 
 import java.util.*;
@@ -9,9 +10,17 @@ import java.util.*;
 public class VideoPlayerService {
 
     private final VideoPlayerSavedData savedData;
+    private final Runnable saveCallback;
 
-    public VideoPlayerService(VideoPlayerSavedData savedData) {
+    public VideoPlayerService(VideoPlayerSavedData savedData, Runnable saveCallback) {
         this.savedData = savedData;
+        this.saveCallback = saveCallback;
+    }
+
+    /** Mark dirty and schedule an async save. */
+    private void markDirty() {
+        savedData.setDirty();
+        saveCallback.run();
     }
 
     // ==================== Accessors ====================
@@ -28,9 +37,15 @@ public class VideoPlayerService {
         return new VideoPlayerSnapshot(Collections.unmodifiableList(dataList));
     }
 
-    /** Full snapshot (all players visible to everyone, access control is on operations). */
+    /** Snapshot filtered: private players hidden from unauthorized viewers. */
     public VideoPlayerSnapshot snapshotFor(Player viewer) {
-        return snapshot();
+        List<VideoPlayerData> list = new ArrayList<>();
+        for (ServerVideoPlayer svp : savedData.players()) {
+            if (Permissions.canView(viewer, svp)) {
+                list.add(toVideoPlayerData(svp));
+            }
+        }
+        return new VideoPlayerSnapshot(Collections.unmodifiableList(list));
     }
 
     public Optional<ServerVideoPlayer> findPlayer(UUID playerId) {
@@ -54,28 +69,28 @@ public class VideoPlayerService {
     /** Creates a player. The actor becomes the owner. Requires admin. */
     public ServerVideoPlayer createPlayer(Player actor, CreatePlayerRequest request) {
         if (!Permissions.canAdmin(actor)) {
-            throw new SecurityException("You do not have permission to create video players.");
+            throw new SecurityException(Messages.get("perm.create", actor));
         }
 
         ServerVideoPlayer player = ServerVideoPlayer.create(request.name(), request.isPublic(), actor.getUniqueId());
         savedData.players().add(player);
-        savedData.setDirty();
+        markDirty();
         return player;
     }
 
     /** Deletes a player. Admin only. */
     public void deletePlayer(Player actor, UUID playerId) {
         if (!Permissions.canAdmin(actor)) {
-            throw new SecurityException("You do not have permission to delete video players.");
+            throw new SecurityException(Messages.get("perm.delete", actor));
         }
 
         int index = findPlayerIndex(playerId);
         if (index < 0) {
-            throw new NoSuchElementException("Video player not found: " + playerId);
+            throw new NoSuchElementException(Messages.get("err.player_not_found", actor, playerId));
         }
 
         savedData.players().remove(index);
-        savedData.setDirty();
+        markDirty();
     }
 
     /** Renames a player. Requires manage permission (admin or owner). */
@@ -85,23 +100,23 @@ public class VideoPlayerService {
         int index = findPlayerIndex(playerId);
         ServerVideoPlayer updated = player.withName(newName);
         savedData.players().set(index, updated);
-        savedData.setDirty();
+        markDirty();
         return updated;
     }
 
     /** Toggle public/private. Admin only. */
     public ServerVideoPlayer setPublic(Player actor, UUID playerId, boolean isPublic) {
         if (!Permissions.canAdmin(actor)) {
-            throw new SecurityException("Only an admin can change the public/private status.");
+            throw new SecurityException(Messages.get("perm.setpublic", actor));
         }
 
         ServerVideoPlayer player = findPlayer(playerId)
-            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
+            .orElseThrow(() -> new NoSuchElementException(Messages.get("err.player_not_found", actor, playerId)));
 
         int index = findPlayerIndex(playerId);
         ServerVideoPlayer updated = player.withPublic(isPublic);
         savedData.players().set(index, updated);
-        savedData.setDirty();
+        markDirty();
         return updated;
     }
 
@@ -111,7 +126,7 @@ public class VideoPlayerService {
         ServerVideoPlayer player = requireManage(actor, request.playerId());
 
         if (request.vertices().size() < 3 || request.vertices().size() > 64) {
-            throw new IllegalArgumentException("Screen must have between 3 and 64 vertices, got " + request.vertices().size());
+            throw new IllegalArgumentException(Messages.get("err.screen_vertices", actor, request.vertices().size()));
         }
 
         ServerVideoScreen screen = new ServerVideoScreen(
@@ -129,7 +144,7 @@ public class VideoPlayerService {
 
         int index = findPlayerIndex(request.playerId());
         savedData.players().set(index, player.withScreens(newScreens));
-        savedData.setDirty();
+        markDirty();
         return screen;
     }
 
@@ -139,12 +154,12 @@ public class VideoPlayerService {
         List<ServerVideoScreen> newScreens = new ArrayList<>(player.screens());
         boolean removed = newScreens.removeIf(s -> s.id().equals(screenId));
         if (!removed) {
-            throw new NoSuchElementException("Screen not found: " + screenId);
+            throw new NoSuchElementException(Messages.get("err.screen_not_found", actor, screenId));
         }
 
         int index = findPlayerIndex(playerId);
         savedData.players().set(index, player.withScreens(newScreens));
-        savedData.setDirty();
+        markDirty();
     }
 
     public ServerVideoScreen renameScreen(Player actor, UUID playerId, UUID screenId, String newName) {
@@ -156,7 +171,7 @@ public class VideoPlayerService {
 
         int playerIdx = findPlayerIndex(playerId);
         savedData.players().set(playerIdx, player.withScreens(newScreens));
-        savedData.setDirty();
+        markDirty();
         return newScreens.get(screenIdx);
     }
 
@@ -169,7 +184,7 @@ public class VideoPlayerService {
 
         int playerIdx = findPlayerIndex(playerId);
         savedData.players().set(playerIdx, player.withScreens(newScreens));
-        savedData.setDirty();
+        markDirty();
         return newScreens.get(screenIdx);
     }
 
@@ -182,7 +197,7 @@ public class VideoPlayerService {
 
         int playerIdx = findPlayerIndex(playerId);
         savedData.players().set(playerIdx, player.withScreens(newScreens));
-        savedData.setDirty();
+        markDirty();
         return newScreens.get(screenIdx);
     }
 
@@ -197,7 +212,7 @@ public class VideoPlayerService {
         int index = findPlayerIndex(playerId);
         ServerVideoPlayer updated = player.withPlaylist(newPlaylist);
         savedData.players().set(index, updated);
-        savedData.setDirty();
+        markDirty();
         return updated;
     }
 
@@ -205,7 +220,7 @@ public class VideoPlayerService {
         ServerVideoPlayer player = requireManage(actor, playerId);
 
         if (videoIndex < 0 || videoIndex >= player.playlist().size()) {
-            throw new IndexOutOfBoundsException("Video index out of bounds: " + videoIndex);
+            throw new IndexOutOfBoundsException(Messages.get("err.video_index", actor, videoIndex));
         }
 
         List<VideoSource> newPlaylist = new ArrayList<>(player.playlist());
@@ -214,7 +229,7 @@ public class VideoPlayerService {
         int idx = findPlayerIndex(playerId);
         ServerVideoPlayer updated = player.withPlaylist(newPlaylist);
         savedData.players().set(idx, updated);
-        savedData.setDirty();
+        markDirty();
         return updated;
     }
 
@@ -223,7 +238,7 @@ public class VideoPlayerService {
 
         List<VideoSource> playlist = player.playlist();
         if (fromIndex < 0 || fromIndex >= playlist.size() || toIndex < 0 || toIndex >= playlist.size()) {
-            throw new IndexOutOfBoundsException("Index out of bounds: from=" + fromIndex + " to=" + toIndex);
+            throw new IndexOutOfBoundsException(Messages.get("err.index_bounds", actor, fromIndex, toIndex));
         }
 
         List<VideoSource> newPlaylist = new ArrayList<>(playlist);
@@ -233,7 +248,7 @@ public class VideoPlayerService {
         int idx = findPlayerIndex(playerId);
         ServerVideoPlayer updated = player.withPlaylist(newPlaylist);
         savedData.players().set(idx, updated);
-        savedData.setDirty();
+        markDirty();
         return updated;
     }
 
@@ -242,20 +257,30 @@ public class VideoPlayerService {
     /** Grant ffcraft.control.<playerId> to a user. Actor must be admin or owner. */
     public ServerVideoPlayer grantControl(Player actor, UUID playerId, UUID targetUser) {
         ServerVideoPlayer player = requireManage(actor, playerId);
+        if (player.controlUsers().contains(targetUser)) {
+            throw new IllegalArgumentException(Messages.get("cmd.grant.already_has", actor));
+        }
+        // Cannot grant to owner (editors, first = owner)
+        if (player.creator().equals(targetUser)) {
+            throw new IllegalArgumentException(Messages.get("cmd.grant.is_owner", actor));
+        }
         int index = findPlayerIndex(playerId);
         ServerVideoPlayer updated = player.grantControl(targetUser);
         savedData.players().set(index, updated);
-        savedData.setDirty();
+        markDirty();
         return updated;
     }
 
     /** Revoke ffcraft.control.<playerId> from a user. Actor must be admin or owner. */
     public ServerVideoPlayer revokeControl(Player actor, UUID playerId, UUID targetUser) {
         ServerVideoPlayer player = requireManage(actor, playerId);
+        if (!player.controlUsers().contains(targetUser)) {
+            throw new IllegalArgumentException(Messages.get("cmd.revoke.no_control", actor));
+        }
         int index = findPlayerIndex(playerId);
         ServerVideoPlayer updated = player.revokeControl(targetUser);
         savedData.players().set(index, updated);
-        savedData.setDirty();
+        markDirty();
         return updated;
     }
 
@@ -267,7 +292,7 @@ public class VideoPlayerService {
 
         int index = findPlayerIndex(playerId);
         savedData.players().set(index, player.withPlaybackState(newState));
-        savedData.setDirty();
+        markDirty();
         return savedData.players().get(index);
     }
 
@@ -294,7 +319,7 @@ public class VideoPlayerService {
         if (index < 0) return null;
         ServerVideoPlayer player = savedData.players().get(index);
         savedData.players().set(index, player.withPlaybackState(newState));
-        savedData.setDirty();
+        markDirty();
         return savedData.players().get(index);
     }
 
@@ -304,7 +329,7 @@ public class VideoPlayerService {
             PlaybackState stopped = player.playbackState().withStatus(PlaybackStatus.STOPPED);
             savedData.players().set(i, player.withPlaybackState(stopped));
         }
-        savedData.setDirty();
+        markDirty();
     }
 
     public void tickProgress() {
@@ -317,7 +342,7 @@ public class VideoPlayerService {
             }
         }
         if (changed) {
-            savedData.setDirty();
+            markDirty();
         }
     }
 
@@ -325,26 +350,26 @@ public class VideoPlayerService {
 
     private ServerVideoPlayer requireAdmin(Player actor, UUID playerId) {
         if (!Permissions.canAdmin(actor)) {
-            throw new SecurityException("You do not have permission for this action.");
+            throw new SecurityException(Messages.get("perm.create", actor));
         }
         return findPlayer(playerId)
-            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
+            .orElseThrow(() -> new NoSuchElementException(Messages.get("err.player_not_found", actor, playerId)));
     }
 
     private ServerVideoPlayer requireManage(Player actor, UUID playerId) {
         ServerVideoPlayer player = findPlayer(playerId)
-            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
+            .orElseThrow(() -> new NoSuchElementException(Messages.get("err.player_not_found", actor, playerId)));
         if (!Permissions.canManage(actor, player)) {
-            throw new SecurityException("You do not have permission to manage this video player. Only the owner or an admin can do this.");
+            throw new SecurityException(Messages.get("perm.manage", actor));
         }
         return player;
     }
 
     private ServerVideoPlayer requireControl(Player actor, UUID playerId) {
         ServerVideoPlayer player = findPlayer(playerId)
-            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
+            .orElseThrow(() -> new NoSuchElementException(Messages.get("err.player_not_found", actor, playerId)));
         if (!Permissions.canControl(actor, player)) {
-            throw new SecurityException("You do not have permission to control this video player.");
+            throw new SecurityException(Messages.get("perm.control", actor));
         }
         return player;
     }
@@ -354,7 +379,7 @@ public class VideoPlayerService {
         for (int i = 0; i < screens.size(); i++) {
             if (screens.get(i).id().equals(screenId)) return i;
         }
-        throw new NoSuchElementException("Screen not found: " + screenId);
+        throw new NoSuchElementException(Messages.get("err.screen_not_found", screenId));
     }
 
     // ==================== Mapper ====================
@@ -376,7 +401,7 @@ public class VideoPlayerService {
             svp.id(),
             svp.name(),
             svp.isPublic(),
-            svp.editors(),
+            Set.of(svp.creator()), // editors = [creator] for client compat
             svp.playlist(),
             svp.playbackState(),
             screenData

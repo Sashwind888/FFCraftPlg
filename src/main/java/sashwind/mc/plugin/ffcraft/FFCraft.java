@@ -9,6 +9,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 import sashwind.mc.plugin.ffcraft.command.FFCraftCommands;
 import sashwind.mc.plugin.ffcraft.data.VideoPlayerSavedData;
+import sashwind.mc.plugin.ffcraft.lang.Messages;
 import sashwind.mc.plugin.ffcraft.model.PlaybackStatus;
 import sashwind.mc.plugin.ffcraft.model.ServerVideoPlayer;
 import sashwind.mc.plugin.ffcraft.network.Networking;
@@ -30,10 +31,14 @@ public final class FFCraft extends JavaPlugin implements Listener {
     public void onEnable() {
         if (!getDataFolder().exists()) getDataFolder().mkdirs();
 
+        // Init i18n — copies lang files to plugins/FFCraft/lang/ on first run
+        Messages.init(this);
+
         savedData = new VideoPlayerSavedData(this);
         savedData.load();
 
-        service = new VideoPlayerService(savedData);
+        service = new VideoPlayerService(savedData,
+            () -> getServer().getScheduler().runTaskAsynchronously(this, savedData::saveIfDirty));
 
         networking = new Networking(this, service);
         networking.register();
@@ -61,7 +66,7 @@ public final class FFCraft extends JavaPlugin implements Listener {
         // Full state sync (every 5 seconds)
         Bukkit.getScheduler().runTaskTimer(this, () -> networking.syncAll(), 100L, 100L);
 
-        getLogger().info("FFCraft enabled! Loaded " + service.players().size() + " video player(s).");
+        getLogger().info(Messages.get("log.plugin_enabled", service.players().size()));
     }
 
     @Override
@@ -70,7 +75,7 @@ public final class FFCraft extends JavaPlugin implements Listener {
         if (service != null) service.stopAllPlayback();
         if (networking != null) networking.unregister();
         if (savedData != null) savedData.save();
-        getLogger().info("FFCraft disabled. Data saved.");
+        getLogger().info(Messages.get("log.plugin_disabled"));
     }
 
     @EventHandler
