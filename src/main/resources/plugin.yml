@@ -9,13 +9,13 @@ description: Server-side plugin for FFCraft client mod - manage video players, s
 commands:
   ffcraft:
     description: FFCraft management commands
-    usage: /ffcraft <create|list|info|rename|delete|setpublic|reload>
+    usage: /ffcraft <create|list|info|rename|delete|setpublic|grant|revoke|reload>
     aliases: [ffc]
 
 permissions:
   ffcraft.admin:
-    description: Allows creating and deleting video players
+    description: Global admin — create/delete players, toggle public/private, manage all players
     default: op
-  ffcraft.edit:
-    description: Allows editing video players (screens, playlist, etc.)
-    default: true
+  ffcraft.control.*:
+    description: Wildcard for dynamic control permissions (ffcraft.control.<playerId>)
+    default: false

@@ -1,30 +1,54 @@
 package sashwind.mc.plugin.ffcraft.service;
 
+import java.util.UUID;
 import org.bukkit.entity.Player;
 import sashwind.mc.plugin.ffcraft.model.ServerVideoPlayer;
 
 /**
- * Permission system for FFCraft plugin.
+ * Four-tier permission system for FFCraft.
  *
- * Admin (ffcraft.admin): OP-level access to create/delete players.
- * Edit: can manage screens, playlist, UV, channel for a specific player.
- *   - The video player is public, OR
- *   - They are an admin, OR
- *   - They are in the editors set
+ * Admin  — ffcraft.admin (OP): global management (create/delete any player, toggle public/private, manage all)
+ * Manage — Admin OR the player's owner: full control of a specific player (playlist, screens, UV, grant/revoke control)
+ * Control — Manage OR ffcraft.control.<playerId> holder: playback operations only (play/pause/stop, prev/next, volume)
+ * View   — Public player: everyone can see screen + browse playlist (read-only).
+ *          Private player: only Admin / Owner / controlUsers can see.
  */
 public final class Permissions {
 
+    private static final String PREFIX = "ffcraft.control.";
+
     private Permissions() {}
+
+    // ── Admin ──────────────────────────────────────
 
     public static boolean canAdmin(Player player) {
         if (player == null) return false;
         return player.isOp() || player.hasPermission("ffcraft.admin");
     }
 
-    public static boolean canEdit(Player player, ServerVideoPlayer videoPlayer) {
+    // ── Manage (Admin or Owner) ────────────────────
+
+    public static boolean canManage(Player player, ServerVideoPlayer vp) {
         if (player == null) return false;
         if (canAdmin(player)) return true;
-        if (videoPlayer.isPublic()) return true;
-        return videoPlayer.editors().contains(player.getUniqueId());
+        // owner = first editor (creator is always added to editors on create)
+        return !vp.editors().isEmpty() && vp.editors().iterator().next().equals(player.getUniqueId());
+    }
+
+    // ── Control (Manage or granted control) ────────
+
+    public static boolean canControl(Player player, ServerVideoPlayer vp) {
+        if (player == null) return false;
+        if (canManage(player, vp)) return true;
+        // Check dynamic permission node ffcraft.control.<playerId>
+        if (player.hasPermission(PREFIX + vp.id())) return true;
+        // Check persisted controlUsers set
+        return vp.controlUsers().contains(player.getUniqueId());
+    }
+
+    // ── Grant / Revoke helpers ─────────────────────
+
+    public static String controlPermission(UUID playerId) {
+        return PREFIX + playerId;
     }
 }

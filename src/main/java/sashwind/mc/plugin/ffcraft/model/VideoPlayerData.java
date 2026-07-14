@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+/** Client-side view — protocol MUST stay compatible with existing client mod. */
 public record VideoPlayerData(
     UUID id,
     String name,

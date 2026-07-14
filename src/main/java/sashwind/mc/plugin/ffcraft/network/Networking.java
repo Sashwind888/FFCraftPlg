@@ -9,7 +9,6 @@ import org.bukkit.plugin.messaging.PluginMessageListener;
 import sashwind.mc.plugin.ffcraft.data.CodecHelper;
 import sashwind.mc.plugin.ffcraft.model.*;
 import sashwind.mc.plugin.ffcraft.service.VideoPlayerService;
-import sashwind.mc.plugin.ffcraft.service.Permissions;
 
 import java.util.List;
 import java.util.UUID;
@@ -17,7 +16,8 @@ import java.util.logging.Level;
 
 /**
  * Plugin messaging channel communication with the FFCraft client mod.
- * Uses JSON-based protocol over the "ffcraft:main" channel.
+ * Protocol: JSON over "ffcraft:main" channel. Field names MUST stay compatible
+ * with the existing client mod — do not rename or remove fields it expects.
  */
 public class Networking implements PluginMessageListener {
 
@@ -50,8 +50,6 @@ public class Networking implements PluginMessageListener {
 
         try {
             String json = new String(message, java.nio.charset.StandardCharsets.UTF_8);
-    
-
             JsonObject packet = CodecHelper.parsePacket(json);
             String type = CodecHelper.getType(packet);
             JsonObject data = CodecHelper.getData(packet);
@@ -80,6 +78,8 @@ public class Networking implements PluginMessageListener {
                 case CodecHelper.TYPE_ADD_VIDEO -> handleAddVideo(player, data);
                 case CodecHelper.TYPE_REMOVE_VIDEO -> handleRemoveVideo(player, data);
                 case CodecHelper.TYPE_MOVE_VIDEO -> handleMoveVideo(player, data);
+                case CodecHelper.TYPE_GRANT_CONTROL -> handleGrantControl(player, data);
+                case CodecHelper.TYPE_REVOKE_CONTROL -> handleRevokeControl(player, data);
                 default -> plugin.getLogger().warning("Unknown packet type: " + type);
             }
         } catch (SecurityException e) {
@@ -89,6 +89,8 @@ public class Networking implements PluginMessageListener {
             sendError(player, "Error: " + e.getMessage());
         }
     }
+
+    // ── Handlers ──────────────────────────────────────
 
     private void handleRequestPlayers(Player player) {
         syncTo(player);
@@ -153,15 +155,12 @@ public class Networking implements PluginMessageListener {
         ServerVideoPlayer svp = service.findPlayer(playerId).orElse(null);
         if (svp == null) return;
 
-        if (!Permissions.canEdit(player, svp)) {
-            throw new SecurityException("You do not have permission to control this video player.");
-        }
-
+        // permission check is inside service.setPlaybackState (control level)
         int prog = svp.playbackState().progressSeconds();
         if (status == PlaybackStatus.STOPPED || index != svp.playbackState().currentIndex()) prog = 0;
         PlaybackState newState = new PlaybackState(status, mode, index, prog, volume, System.currentTimeMillis() / 1000);
 
-        service.setPlaybackState(playerId, newState);
+        service.setPlaybackState(player, playerId, newState);
         syncAll();
     }
 
@@ -215,37 +214,51 @@ public class Networking implements PluginMessageListener {
         syncAll();
     }
 
-    // ==================== Send to Client ====================
+    private void handleGrantControl(Player player, JsonObject data) {
+        UUID playerId = UUID.fromString(data.get("playerId").getAsString());
+        UUID target = UUID.fromString(data.get("target").getAsString());
+        service.grantControl(player, playerId, target);
+        syncAll();
+    }
 
+    private void handleRevokeControl(Player player, JsonObject data) {
+        UUID playerId = UUID.fromString(data.get("playerId").getAsString());
+        UUID target = UUID.fromString(data.get("target").getAsString());
+        service.revokeControl(player, playerId, target);
+        syncAll();
+    }
+
+    // ── Send (filtered per-viewer) ────────────────────
+
+    /** Full sync (same data to everyone — all players are visible). */
     public void syncAll() {
         VideoPlayerSnapshot snapshot = service.snapshot();
-        String packet = CodecHelper.buildSyncPlayersPacket(snapshot);
-        byte[] data = packet.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            player.sendPluginMessage(plugin, CHANNEL, data);
+        byte[] data = CodecHelper.buildSyncPlayersPacket(snapshot)
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        for (Player viewer : Bukkit.getOnlinePlayers()) {
+            viewer.sendPluginMessage(plugin, CHANNEL, data);
         }
     }
 
-    public void syncTo(Player player) {
-        VideoPlayerSnapshot snapshot = service.snapshot();
-        String packet = CodecHelper.buildSyncPlayersPacket(snapshot);
-        byte[] data = packet.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        player.sendPluginMessage(plugin, CHANNEL, data);
+    /** Full sync to a specific player. */
+    public void syncTo(Player viewer) {
+        byte[] data = CodecHelper.buildSyncPlayersPacket(service.snapshot())
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        viewer.sendPluginMessage(plugin, CHANNEL, data);
     }
 
+    /** Progress update to all online players. */
     public void syncProgress(UUID playerId, PlaybackStatus status, int currentIndex, int progressSeconds) {
-        String packet = CodecHelper.buildUpdateProgressPacket(playerId, status, currentIndex, progressSeconds);
-        byte[] data = packet.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            player.sendPluginMessage(plugin, CHANNEL, data);
+        byte[] data = CodecHelper.buildUpdateProgressPacket(playerId, status, currentIndex, progressSeconds)
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        for (Player viewer : Bukkit.getOnlinePlayers()) {
+            viewer.sendPluginMessage(plugin, CHANNEL, data);
         }
     }
 
     private void sendError(Player player, String message) {
-        String packet = CodecHelper.buildErrorPacket(message);
-        byte[] data = packet.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] data = CodecHelper.buildErrorPacket(message)
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8);
         player.sendPluginMessage(plugin, CHANNEL, data);
     }
 }

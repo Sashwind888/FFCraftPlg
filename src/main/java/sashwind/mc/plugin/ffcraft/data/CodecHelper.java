@@ -187,6 +187,13 @@ public final class CodecHelper {
         }
         obj.add("editors", editorsArr);
 
+        // controlUsers — server-side only, persisted but NOT sent to clients
+        JsonArray controlArr = new JsonArray();
+        for (UUID u : player.controlUsers()) {
+            controlArr.add(u.toString());
+        }
+        obj.add("controlUsers", controlArr);
+
         JsonArray playlistArr = new JsonArray();
         for (VideoSource vs : player.playlist()) {
             playlistArr.add(encodeVideoSource(vs));
@@ -211,6 +218,14 @@ public final class CodecHelper {
             editors.add(UUID.fromString(e.getAsString()));
         }
 
+        // controlUsers — load from persisted data (may be absent in older files)
+        Set<UUID> controlUsers = new HashSet<>();
+        if (obj.has("controlUsers")) {
+            for (JsonElement e : obj.getAsJsonArray("controlUsers")) {
+                controlUsers.add(UUID.fromString(e.getAsString()));
+            }
+        }
+
         JsonArray playlistArr = obj.getAsJsonArray("playlist");
         List<VideoSource> playlist = new ArrayList<>();
         for (JsonElement e : playlistArr) {
@@ -228,6 +243,7 @@ public final class CodecHelper {
             obj.get("name").getAsString(),
             obj.get("isPublic").getAsBoolean(),
             Collections.unmodifiableSet(editors),
+            Collections.unmodifiableSet(controlUsers),
             playlist,
             decodePlaybackState(obj.getAsJsonObject("playbackState")),
             screens
@@ -357,6 +373,9 @@ public final class CodecHelper {
     public static final String TYPE_ADD_VIDEO = "add_video";
     public static final String TYPE_REMOVE_VIDEO = "remove_video";
     public static final String TYPE_MOVE_VIDEO = "move_video";
+
+    public static final String TYPE_GRANT_CONTROL = "grant_control";
+    public static final String TYPE_REVOKE_CONTROL = "revoke_control";
 
     public static final String TYPE_SYNC_PLAYERS = "sync_players";
     public static final String TYPE_UPDATE_PROGRESS = "update_progress";
