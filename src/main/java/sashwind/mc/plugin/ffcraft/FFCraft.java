@@ -37,8 +37,11 @@ public final class FFCraft extends JavaPlugin implements Listener {
         savedData = new VideoPlayerSavedData(this);
         savedData.load();
 
-        service = new VideoPlayerService(savedData,
-            () -> getServer().getScheduler().runTaskAsynchronously(this, savedData::saveIfDirty));
+        service = new VideoPlayerService(savedData, () -> {
+            if (isEnabled()) {
+                getServer().getScheduler().runTaskAsynchronously(this, savedData::saveIfDirty);
+            }
+        });
 
         networking = new Networking(this, service);
         networking.register();
@@ -71,7 +74,11 @@ public final class FFCraft extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
-        if (progressTask != null) progressTask.cancel();
+        if (progressTask != null) {
+            progressTask.cancel();
+            progressTask = null;
+        }
+        getServer().getScheduler().cancelTasks(this);
         if (service != null) service.stopAllPlayback();
         if (networking != null) networking.unregister();
         if (savedData != null) savedData.save();

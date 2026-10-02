@@ -55,11 +55,11 @@ public class VideoPlayerSavedData {
         }
     }
 
-    public void save() {
+    public synchronized void save() {
         if (!dirty) return;
 
         try {
-            if (!Files.exists(dataFile.getParent())) {
+            if (dataFile.getParent() != null && !Files.exists(dataFile.getParent())) {
                 Files.createDirectories(dataFile.getParent());
             }
 
