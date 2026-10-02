@@ -13,9 +13,45 @@ commands:
     aliases: [ffc]
 
 permissions:
+  # ── Create (independent of admin) ──
+  ffcraft.create:
+    description: Create video players (public and private)
+    default: false
+    children:
+      ffcraft.create.public: true
+      ffcraft.create.private: true
+  ffcraft.create.public:
+    description: Create public video players (visible to everyone)
+    default: false
+  ffcraft.create.private:
+    description: Create private video players (visible only to authorized players)
+    default: false
+
+  # ── Admin (global; parent grants every child below) ──
   ffcraft.admin:
-    description: Global admin — create/delete players, toggle public/private, manage all players
+    description: Parent admin node — grants all ffcraft.admin.* children (does not include creation)
     default: op
+    children:
+      ffcraft.admin.delete: true
+      ffcraft.admin.setpublic: true
+      ffcraft.admin.reload: true
+  ffcraft.admin.delete:
+    description: Delete video players
+    default: false
+  ffcraft.admin.setpublic:
+    description: Toggle a video player between public and private
+    default: false
+  ffcraft.admin.reload:
+    description: Re-sync all clients
+    default: false
+
+  # ── Manage (per-player delegation; owner/admin always have it) ──
+  ffcraft.manage:
+    description: Manage every video player (rename, screens, playlist, grant/revoke); grant ffcraft.manage.<uuid> to delegate one
+    default: false
+  ffcraft.control:
+    description: Control playback on every video player; grant ffcraft.control.<uuid> to delegate one
+    default: false
   ffcraft.control.*:
     description: Wildcard for dynamic control permissions (ffcraft.control.<playerId>)
     default: false

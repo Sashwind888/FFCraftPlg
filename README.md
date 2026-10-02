@@ -36,15 +36,39 @@
 
 | 命令 | 权限 | 说明 |
 |------|------|------|
-| `/ffcraft create <name> [public\|private]` | `ffcraft.admin` | 创建播放器 |
+| `/ffcraft create <name> [public\|private]` | `ffcraft.create.public` / `ffcraft.create.private` | 创建播放器（公共/私人分开授权，独立于 admin） |
 | `/ffcraft list` | 所有人 | 列出可查看的播放器（私人播放器仅授权用户可见） |
 | `/ffcraft info <uuid>` | 所有人 | 查看播放器详情（私人播放器需授权） |
-| `/ffcraft rename <uuid> <newName>` | 播放器创建者 / admin | 重命名播放器 |
-| `/ffcraft delete <uuid>` | `ffcraft.admin` | 删除播放器 |
-| `/ffcraft setpublic <uuid> <true\|false>` | `ffcraft.admin` | 切换公开/私人模式 |
-| `/ffcraft grant <playerId> <playerName>` | 播放器创建者 / admin | 授予操作权限（播放/暂停/切歌/音量） |
-| `/ffcraft revoke <playerId> <playerName>` | 播放器创建者 / admin | 撤销操作权限 |
-| `/ffcraft reload` | `ffcraft.admin` | 重新同步所有客户端 |
+| `/ffcraft rename <uuid> <newName>` | 播放器创建者 / `ffcraft.manage.<uuid>` / admin | 重命名播放器 |
+| `/ffcraft delete <uuid>` | `ffcraft.admin.delete` | 删除播放器 |
+| `/ffcraft setpublic <uuid> <true\|false>` | `ffcraft.admin.setpublic` | 切换公开/私人模式 |
+| `/ffcraft grant <playerId> <playerName>` | 播放器创建者 / `ffcraft.manage.<uuid>` / admin | 授予操作权限（播放/暂停/切歌/音量） |
+| `/ffcraft revoke <playerId> <playerName>` | 播放器创建者 / `ffcraft.manage.<uuid>` / admin | 撤销操作权限 |
+| `/ffcraft reload` | `ffcraft.admin.reload` | 重新同步所有客户端 |
+
+### 权限节点
+
+```
+ffcraft.create                  创建播放器（独立于 admin）
+├─ ffcraft.create.public        创建公共播放器
+└─ ffcraft.create.private       创建私人播放器
+
+ffcraft.admin                    父节点（default: op），授予即拥有以下全部
+├─ ffcraft.admin.delete          删除播放器
+├─ ffcraft.admin.setpublic       切换公开/私人
+└─ ffcraft.admin.reload          重新同步所有客户端
+
+ffcraft.manage                   通配：管理所有播放器
+└─ ffcraft.manage.<uuid>         委派管理指定播放器（改名/屏幕/播放列表/授权）
+
+ffcraft.control                  通配：控制所有播放器
+└─ ffcraft.control.<uuid>        委派控制指定播放器（播放/暂停/切歌/音量）
+```
+
+- 创建权限**不在** `ffcraft.admin` 之下：非 OP 玩家即使有 `ffcraft.admin` 也需单独授予 `ffcraft.create.*` 才能创建
+- 播放器**创建者（owner）**恒有该播放器的 manage 与 control 权限，无需授予节点
+- 节点检查会逐级向上匹配父节点：授予 `ffcraft.admin` 等价于授予全部 admin 子节点，不依赖权限插件的 children 传播
+- OP 不受以上节点限制（原有行为不变）
 
 
 | 来源 | 公开播放器 | 私人播放器 |
@@ -54,7 +78,7 @@
 |客户端同步|全量推送|按 viewer 过滤后推送|
 
 
-- 权限节点可通过 LuckPerms 等权限插件赋予玩家
+- 权限节点可通过 LuckPerms 等权限插件赋予玩家（见上方「权限节点」）
 - 所有 `uuid` 参数均指播放器的唯一标识
 
 ## 🤝 贡献

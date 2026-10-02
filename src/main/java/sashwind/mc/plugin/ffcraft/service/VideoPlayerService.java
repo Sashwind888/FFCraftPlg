@@ -66,10 +66,11 @@ public class VideoPlayerService {
 
     // ==================== Player Management ====================
 
-    /** Creates a player. The actor becomes the owner. Requires admin. */
+    /** Creates a player. The actor becomes the owner. Requires ffcraft.create.<visibility>. */
     public ServerVideoPlayer createPlayer(Player actor, CreatePlayerRequest request) {
-        if (!Permissions.canAdmin(actor)) {
-            throw new SecurityException(Messages.get("perm.create", actor));
+        if (!Permissions.canCreate(actor, request.isPublic())) {
+            throw new SecurityException(Messages.get(
+                request.isPublic() ? "perm.create.public" : "perm.create.private", actor));
         }
 
         ServerVideoPlayer player = ServerVideoPlayer.create(request.name(), request.isPublic(), actor.getUniqueId());
@@ -78,9 +79,9 @@ public class VideoPlayerService {
         return player;
     }
 
-    /** Deletes a player. Admin only. */
+    /** Deletes a player. Requires ffcraft.admin.delete. */
     public void deletePlayer(Player actor, UUID playerId) {
-        if (!Permissions.canAdmin(actor)) {
+        if (!Permissions.canDelete(actor)) {
             throw new SecurityException(Messages.get("perm.delete", actor));
         }
 
@@ -104,9 +105,9 @@ public class VideoPlayerService {
         return updated;
     }
 
-    /** Toggle public/private. Admin only. */
+    /** Toggle public/private. Requires ffcraft.admin.setpublic. */
     public ServerVideoPlayer setPublic(Player actor, UUID playerId, boolean isPublic) {
-        if (!Permissions.canAdmin(actor)) {
+        if (!Permissions.canSetPublic(actor)) {
             throw new SecurityException(Messages.get("perm.setpublic", actor));
         }
 
@@ -347,14 +348,6 @@ public class VideoPlayerService {
     }
 
     // ==================== Permission helpers ====================
-
-    private ServerVideoPlayer requireAdmin(Player actor, UUID playerId) {
-        if (!Permissions.canAdmin(actor)) {
-            throw new SecurityException(Messages.get("perm.create", actor));
-        }
-        return findPlayer(playerId)
-            .orElseThrow(() -> new NoSuchElementException(Messages.get("err.player_not_found", actor, playerId)));
-    }
 
     private ServerVideoPlayer requireManage(Player actor, UUID playerId) {
         ServerVideoPlayer player = findPlayer(playerId)

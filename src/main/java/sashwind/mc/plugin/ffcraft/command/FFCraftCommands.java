@@ -186,7 +186,7 @@ public class FFCraftCommands implements CommandExecutor, TabCompleter {
     }
 
     private void handleReload(CommandSender sender) {
-        if (sender instanceof Player player && !Permissions.canAdmin(player)) {
+        if (sender instanceof Player player && !Permissions.canReload(player)) {
             sender.sendMessage(red("cmd.reload.no_perm", sender)); return;
         }
         networking.syncAll();
@@ -266,7 +266,7 @@ public class FFCraftCommands implements CommandExecutor, TabCompleter {
                 // Only players who currently have control
                 return Bukkit.getOnlinePlayers().stream()
                     .filter(p -> controlSet.contains(p.getUniqueId())
-                        || p.hasPermission("ffcraft.control." + vp.id()))
+                        || Permissions.canNode(p, Permissions.controlPermission(vp.id())))
                     .filter(p -> !p.getUniqueId().equals(creator))
                     .map(Player::getName)
                     .filter(n -> n.toLowerCase().startsWith(args[2].toLowerCase()))
@@ -276,7 +276,7 @@ public class FFCraftCommands implements CommandExecutor, TabCompleter {
                 return Bukkit.getOnlinePlayers().stream()
                     .filter(p -> !controlSet.contains(p.getUniqueId()))
                     .filter(p -> !p.getUniqueId().equals(creator))
-                    .filter(p -> !p.hasPermission("ffcraft.control." + vp.id()))
+                    .filter(p -> !Permissions.canNode(p, Permissions.controlPermission(vp.id())))
                     .map(Player::getName)
                     .filter(n -> n.toLowerCase().startsWith(args[2].toLowerCase()))
                     .collect(Collectors.toList());
