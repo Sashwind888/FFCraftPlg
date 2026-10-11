@@ -168,6 +168,21 @@ public interface FFCraftAPI {
      */
     ServerVideoScreen updateScreenChannel(UUID playerId, UUID screenId, ScreenChannelState channelState);
 
+    // ==================== Mesh & Topology Calculation ====================
+
+    /**
+     * Computes the complete 3D mesh for the given screen:
+     * - Raw data (positions, pitch, yaw)
+     * - Decomposed triangle faces, winding order (point indices), and normal orientation
+     * - Transformed UV mapping coordinates per vertex
+     */
+    sashwind.mc.plugin.ffcraft.model.mesh.ComputedScreenMesh computeScreenMesh(ServerVideoScreen screen);
+
+    /**
+     * Finds the screen and computes its 3D mesh.
+     */
+    sashwind.mc.plugin.ffcraft.model.mesh.ComputedScreenMesh computeScreenMesh(UUID playerId, UUID screenId);
+
     // ==================== Client Sync ====================
 
     /**

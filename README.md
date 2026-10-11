@@ -137,6 +137,33 @@ CreateScreenRequest request = new CreateScreenRequest(
     playerId, "大屏幕", "world", verticesList, 0, 5.0
 );
 ServerVideoScreen screen = api.createScreen(request);
+
+// 5. 获取屏幕的几何计算数据（原始点、三角面网格点顺序/朝向、最终UV）
+ComputedScreenMesh mesh = api.computeScreenMesh(screen);
+
+// (1) 原始数据：包含打点 xyz 坐标与玩家视线 pitch, yaw
+List<ScreenVertex> raw = mesh.getRawVertices();
+
+// (2) 计算完成的数据：面的组成、点顺序（Winding Order）、法线朝向
+List<TriangleFace> faces = mesh.getFaces();
+List<Integer> indices = mesh.getTriangleIndices(); // 三角形顶点索引顺序 [0, 1, 2, 0, 2, 3...]
+double nx = mesh.normalX(); // 面的法向量朝向
+double ny = mesh.normalY();
+double nz = mesh.normalZ();
+
+for (TriangleFace face : faces) {
+    ComputedVertex a = face.a();
+    ComputedVertex b = face.b();
+    ComputedVertex c = face.c();
+    // 三角面的 3 个顶点坐标与朝向
+    Bukkit.getLogger().info("面顶点 A: " + a.x() + ", " + a.y() + ", " + a.z());
+}
+
+// (3) UV 数据：每个顶点计算好的贴图采样坐标 (u, v)
+for (ComputedVertex v : mesh.getComputedVertices()) {
+    double u = v.u(); // 0.0 ~ 1.0
+    double vCoord = v.v();
+}
 ```
 
 ### 3. 自定义事件监听 (Events)

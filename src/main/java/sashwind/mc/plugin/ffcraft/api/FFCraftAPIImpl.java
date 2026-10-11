@@ -234,6 +234,23 @@ public class FFCraftAPIImpl implements FFCraftAPI {
         return screen;
     }
 
+    // ==================== Mesh & Topology Calculation ====================
+
+    @Override
+    public sashwind.mc.plugin.ffcraft.model.mesh.ComputedScreenMesh computeScreenMesh(ServerVideoScreen screen) {
+        return sashwind.mc.plugin.ffcraft.mesh.ScreenMeshCalculator.compute(screen);
+    }
+
+    @Override
+    public sashwind.mc.plugin.ffcraft.model.mesh.ComputedScreenMesh computeScreenMesh(UUID playerId, UUID screenId) {
+        ServerVideoPlayer player = getPlayerOrThrow(playerId);
+        ServerVideoScreen screen = player.screens().stream()
+            .filter(s -> s.id().equals(screenId))
+            .findFirst()
+            .orElseThrow(() -> new NoSuchElementException("Screen not found: " + screenId));
+        return computeScreenMesh(screen);
+    }
+
     // ==================== Client Sync ====================
 
     @Override
