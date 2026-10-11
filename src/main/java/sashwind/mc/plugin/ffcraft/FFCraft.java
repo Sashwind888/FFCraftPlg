@@ -5,8 +5,11 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
+import sashwind.mc.plugin.ffcraft.api.FFCraftAPI;
+import sashwind.mc.plugin.ffcraft.api.FFCraftAPIImpl;
 import sashwind.mc.plugin.ffcraft.command.FFCraftCommands;
 import sashwind.mc.plugin.ffcraft.data.VideoPlayerSavedData;
 import sashwind.mc.plugin.ffcraft.lang.Messages;
@@ -22,6 +25,9 @@ import java.util.Objects;
  */
 public final class FFCraft extends JavaPlugin implements Listener {
 
+    private static FFCraft instance;
+    private FFCraftAPI api;
+
     private VideoPlayerSavedData savedData;
     private VideoPlayerService service;
     private Networking networking;
@@ -29,6 +35,7 @@ public final class FFCraft extends JavaPlugin implements Listener {
 
     @Override
     public void onEnable() {
+        instance = this;
         if (!getDataFolder().exists()) getDataFolder().mkdirs();
 
         // Init i18n — copies lang files to plugins/FFCraft/lang/ on first run
@@ -45,6 +52,9 @@ public final class FFCraft extends JavaPlugin implements Listener {
 
         networking = new Networking(this, service);
         networking.register();
+
+        api = new FFCraftAPIImpl(service, networking);
+        getServer().getServicesManager().register(FFCraftAPI.class, api, this, ServicePriority.Normal);
 
         FFCraftCommands commands = new FFCraftCommands(service, networking);
         Objects.requireNonNull(getCommand("ffcraft")).setExecutor(commands);
@@ -82,7 +92,26 @@ public final class FFCraft extends JavaPlugin implements Listener {
         if (service != null) service.stopAllPlayback();
         if (networking != null) networking.unregister();
         if (savedData != null) savedData.save();
+        getServer().getServicesManager().unregisterAll(this);
+        api = null;
+        instance = null;
         getLogger().info(Messages.get("log.plugin_disabled"));
+    }
+
+    public static FFCraft getInstance() {
+        return instance;
+    }
+
+    public static FFCraftAPI getApi() {
+        return instance != null ? instance.api : null;
+    }
+
+    public VideoPlayerService getService() {
+        return service;
+    }
+
+    public Networking getNetworking() {
+        return networking;
     }
 
     @EventHandler

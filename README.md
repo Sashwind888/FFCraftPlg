@@ -4,6 +4,10 @@
 
 > FFCraft 的 Bukkit 插件端，为服务器提供媒体播放器管理功能。需配合客户端模组使用，让玩家在 Minecraft 世界中播放任意媒体内容。
 
+> [!NOTE]
+> 版本号命名规则：
+> **`网络api版本号`**`.`**`大更新版本号`**`.`**`BUG修复版本号`**
+
 ## ✨ 功能特性
 
 - **服务端统一管理** — 通过指令或配置文件创建、删除、配置播放器
@@ -80,6 +84,117 @@ ffcraft.control                  通配：控制所有播放器
 
 - 权限节点可通过 LuckPerms 等权限插件赋予玩家（见上方「权限节点」）
 - 所有 `uuid` 参数均指播放器的唯一标识
+
+## 💻 开发者 API & 事件系统
+
+FFCraft 提供了面向第三方插件的完整编程 API 以及自定义 Bukkit 事件。  
+为了彻底避免与原版 Minecraft 的玩家实体（`org.bukkit.entity.Player`）产生命名冲突，所有媒体播放器相关的类与事件均使用 **`VideoPlayer`** / **`VideoScreen`** / **`VideoPlaylist`** 前缀。
+
+### 1. 接入 API
+
+可以通过静态入口或 Bukkit 服务管理器（ServicesManager）获取 `FFCraftAPI` 实例：
+
+```java
+import sashwind.mc.plugin.ffcraft.FFCraft;
+import sashwind.mc.plugin.ffcraft.api.FFCraftAPI;
+
+// 方式一：静态快捷获取
+FFCraftAPI api = FFCraft.getApi();
+
+// 方式二：通过 Bukkit ServicesManager 获取
+RegisteredServiceProvider<FFCraftAPI> provider =
+    Bukkit.getServicesManager().getRegistration(FFCraftAPI.class);
+if (provider != null) {
+    FFCraftAPI api = provider.getProvider();
+}
+```
+
+### 2. 核心 API 用法示例
+
+```java
+// 1. 查找与管理播放器
+Optional<ServerVideoPlayer> playerOpt = api.getPlayerByName("主城大屏幕");
+playerOpt.ifPresent(player -> {
+    UUID playerId = player.id();
+
+    // 2. 播放列表管理（自动同步客户端）
+    api.addVideo(playerId, "https://example.com/video.mp4", 1920, 1080, 30);
+
+    // 3. 播放控制（自动同步客户端）
+    api.setVolume(playerId, 80);     // 调整音量 (0~100)
+    api.playIndex(playerId, 0);      // 播放指定索引并开始
+    api.play(playerId);              // 播放/继续
+    api.pause(playerId);             // 暂停
+    api.stop(playerId);              // 停止
+    api.seek(playerId, 60);          // 跳转至第 60 秒
+    api.next(playerId);              // 下一首
+    api.previous(playerId);          // 上一首
+    api.setPlaybackMode(playerId, PlaybackMode.LOOP_ALL); // 循环模式
+});
+
+// 4. 创建屏幕
+CreateScreenRequest request = new CreateScreenRequest(
+    playerId, "大屏幕", "world", verticesList, 0, 5.0
+);
+ServerVideoScreen screen = api.createScreen(request);
+```
+
+### 3. 自定义事件监听 (Events)
+
+所有事件均继承自 `VideoPlayerEvent`，支持直接获取当前播放器与当前播放的视频 URL：
+
+| 事件类名 | Cancellable | 说明与关键方法 |
+|---|:---:|---|
+| `VideoPlayerPlaybackStateChangeEvent` | 是 | 播放/暂停/停止/进度/音量变动，可直接调用 `event.getCurrentUrl()` |
+| `VideoPlayerTrackChangeEvent` | 是 | 列表切歌/换集，提供 `getPreviousUrl()`、`getNewUrl()` |
+| `VideoPlaylistAddEvent` | 是 | 添加视频源，提供 `getUrl()`、`getVideoSource()` |
+| `VideoPlaylistRemoveEvent` | 是 | 移除视频源，提供 `getRemovedUrl()` |
+| `VideoPlaylistReorderEvent` | 是 | 列表调序，提供 `getFromIndex()`、`getToIndex()` |
+| `VideoPlayerCreateEvent` | 是 | 播放器创建，提供名称、可见性、所有者 UUID |
+| `VideoPlayerDeleteEvent` | 是 | 播放器被删除 |
+| `VideoPlayerRenameEvent` | 是 | 播放器重命名 |
+| `VideoPlayerVisibilityChangeEvent` | 是 | 公开/私人状态切换 |
+| `VideoScreenCreateEvent` | 是 | 创建新屏幕（多边形/弧形） |
+| `VideoScreenDeleteEvent` | 是 | 删除屏幕 |
+| `VideoScreenTransformChangeEvent` | 是 | 屏幕贴图 UV / 弧度半径 / 通道状态变更 |
+
+#### 监听示例：
+
+```java
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import sashwind.mc.plugin.ffcraft.event.*;
+
+public class MyVideoListener implements Listener {
+
+    // 监听播放状态改变（包括正在播放的 URL）
+    @EventHandler
+    public void onStateChange(VideoPlayerPlaybackStateChangeEvent event) {
+        event.getCurrentUrl().ifPresent(url -> {
+            Bukkit.getLogger().info("当前正在播放的媒体 URL: " + url);
+        });
+
+        if (event.isStatusChanged()) {
+            Bukkit.getLogger().info("播放状态切换: " + event.getNewState().status());
+        }
+    }
+
+    // 监听切歌
+    @EventHandler
+    public void onTrackChange(VideoPlayerTrackChangeEvent event) {
+        Bukkit.getLogger().info("播放器切歌: " + event.getPreviousUrl().orElse("无")
+            + " -> " + event.getNewUrl().orElse("无"));
+    }
+
+    // 监听添加视频（可用于 URL 白名单过滤）
+    @EventHandler
+    public void onAddVideo(VideoPlaylistAddEvent event) {
+        if (!event.getUrl().startsWith("https://")) {
+            event.setCancelled(true); // 拦截非 HTTPS 资源
+        }
+    }
+}
+```
 
 ## 🤝 贡献
 

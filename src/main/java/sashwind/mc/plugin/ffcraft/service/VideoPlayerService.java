@@ -1,7 +1,9 @@
 package sashwind.mc.plugin.ffcraft.service;
 
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import sashwind.mc.plugin.ffcraft.data.VideoPlayerSavedData;
+import sashwind.mc.plugin.ffcraft.event.*;
 import sashwind.mc.plugin.ffcraft.lang.Messages;
 import sashwind.mc.plugin.ffcraft.model.*;
 
@@ -54,6 +56,12 @@ public class VideoPlayerService {
             .findFirst();
     }
 
+    public Optional<ServerVideoPlayer> findPlayerByName(String name) {
+        return savedData.players().stream()
+            .filter(p -> p.name().equalsIgnoreCase(name))
+            .findFirst();
+    }
+
     private int findPlayerIndex(UUID playerId) {
         List<ServerVideoPlayer> list = savedData.players();
         for (int i = 0; i < list.size(); i++) {
@@ -66,56 +74,104 @@ public class VideoPlayerService {
 
     // ==================== Player Management ====================
 
-    /** Creates a player. The actor becomes the owner. Requires ffcraft.create.<visibility>. */
+    /** Creates a player with actor permission check. */
     public ServerVideoPlayer createPlayer(Player actor, CreatePlayerRequest request) {
         if (!Permissions.canCreate(actor, request.isPublic())) {
             throw new SecurityException(Messages.get(
                 request.isPublic() ? "perm.create.public" : "perm.create.private", actor));
         }
+        return createPlayerSystem(actor, request.name(), request.isPublic(), actor.getUniqueId());
+    }
 
-        ServerVideoPlayer player = ServerVideoPlayer.create(request.name(), request.isPublic(), actor.getUniqueId());
+    /** Creates a player without permission check (for API, console, or automation). */
+    public ServerVideoPlayer createPlayerSystem(Player actor, String name, boolean isPublic, UUID owner) {
+        ServerVideoPlayer player = ServerVideoPlayer.create(name, isPublic, owner);
+        VideoPlayerCreateEvent event = new VideoPlayerCreateEvent(player, actor, name, isPublic, owner);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled()) {
+            throw new IllegalStateException("VideoPlayer creation cancelled by event listener");
+        }
+
         savedData.players().add(player);
         markDirty();
         return player;
     }
 
-    /** Deletes a player. Requires ffcraft.admin.delete. */
+    /** Deletes a player with actor permission check. */
     public void deletePlayer(Player actor, UUID playerId) {
         if (!Permissions.canDelete(actor)) {
             throw new SecurityException(Messages.get("perm.delete", actor));
         }
+        deletePlayerSystem(actor, playerId);
+    }
 
+    /** Deletes a player without permission check. */
+    public void deletePlayerSystem(Player actor, UUID playerId) {
         int index = findPlayerIndex(playerId);
         if (index < 0) {
-            throw new NoSuchElementException(Messages.get("err.player_not_found", actor, playerId));
+            throw new NoSuchElementException(actor != null ? Messages.get("err.player_not_found", actor, playerId) : "Video player not found: " + playerId);
+        }
+
+        ServerVideoPlayer player = savedData.players().get(index);
+        VideoPlayerDeleteEvent event = new VideoPlayerDeleteEvent(player, actor);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled()) {
+            throw new IllegalStateException("VideoPlayer deletion cancelled by event listener");
         }
 
         savedData.players().remove(index);
         markDirty();
     }
 
-    /** Renames a player. Requires manage permission (admin or owner). */
+    /** Renames a player with actor permission check. */
     public ServerVideoPlayer renamePlayer(Player actor, UUID playerId, String newName) {
-        ServerVideoPlayer player = requireManage(actor, playerId);
+        requireManage(actor, playerId);
+        return renamePlayerSystem(actor, playerId, newName);
+    }
 
+    /** Renames a player without permission check. */
+    public ServerVideoPlayer renamePlayerSystem(Player actor, UUID playerId, String newName) {
         int index = findPlayerIndex(playerId);
-        ServerVideoPlayer updated = player.withName(newName);
+        if (index < 0) {
+            throw new NoSuchElementException("Video player not found: " + playerId);
+        }
+        ServerVideoPlayer player = savedData.players().get(index);
+
+        VideoPlayerRenameEvent event = new VideoPlayerRenameEvent(player, actor, player.name(), newName);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled()) {
+            throw new IllegalStateException("VideoPlayer rename cancelled by event listener");
+        }
+
+        ServerVideoPlayer updated = player.withName(event.getNewName());
         savedData.players().set(index, updated);
         markDirty();
         return updated;
     }
 
-    /** Toggle public/private. Requires ffcraft.admin.setpublic. */
+    /** Toggle public/private with actor permission check. */
     public ServerVideoPlayer setPublic(Player actor, UUID playerId, boolean isPublic) {
         if (!Permissions.canSetPublic(actor)) {
             throw new SecurityException(Messages.get("perm.setpublic", actor));
         }
+        return setPublicSystem(actor, playerId, isPublic);
+    }
 
-        ServerVideoPlayer player = findPlayer(playerId)
-            .orElseThrow(() -> new NoSuchElementException(Messages.get("err.player_not_found", actor, playerId)));
-
+    /** Toggle public/private without permission check. */
+    public ServerVideoPlayer setPublicSystem(Player actor, UUID playerId, boolean isPublic) {
         int index = findPlayerIndex(playerId);
-        ServerVideoPlayer updated = player.withPublic(isPublic);
+        if (index < 0) {
+            throw new NoSuchElementException("Video player not found: " + playerId);
+        }
+        ServerVideoPlayer player = savedData.players().get(index);
+
+        VideoPlayerVisibilityChangeEvent event = new VideoPlayerVisibilityChangeEvent(player, actor, player.isPublic(), isPublic);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled()) {
+            throw new IllegalStateException("VideoPlayer visibility change cancelled by event listener");
+        }
+
+        ServerVideoPlayer updated = player.withPublic(event.isNewPublic());
         savedData.players().set(index, updated);
         markDirty();
         return updated;
@@ -124,10 +180,19 @@ public class VideoPlayerService {
     // ==================== Screen Management ====================
 
     public ServerVideoScreen createScreen(Player actor, CreateScreenRequest request) {
-        ServerVideoPlayer player = requireManage(actor, request.playerId());
+        requireManage(actor, request.playerId());
+        return createScreenSystem(actor, request);
+    }
 
-        if (request.vertices().size() < 3 || request.vertices().size() > 64) {
-            throw new IllegalArgumentException(Messages.get("err.screen_vertices", actor, request.vertices().size()));
+    public ServerVideoScreen createScreenSystem(Player actor, CreateScreenRequest request) {
+        ServerVideoPlayer player = findPlayer(request.playerId())
+            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + request.playerId()));
+
+        int minVerts = (request.screenType() == 1) ? 1 : 3;
+        if (request.vertices().size() < minVerts || request.vertices().size() > 64) {
+            throw new IllegalArgumentException(actor != null
+                ? Messages.get("err.screen_vertices", actor, request.vertices().size())
+                : "Vertices count must be between " + minVerts + " and 64");
         }
 
         ServerVideoScreen screen = new ServerVideoScreen(
@@ -136,9 +201,17 @@ public class VideoPlayerService {
             request.name(),
             request.dimension(),
             request.vertices(),
-            UvTransform.createDefault(),
-            ScreenChannelState.createDefault()
+            UvTransform.createDefault(request.screenType()),
+            ScreenChannelState.createDefault(),
+            request.screenType(),
+            request.radius()
         );
+
+        VideoScreenCreateEvent event = new VideoScreenCreateEvent(player, actor, screen);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled()) {
+            throw new IllegalStateException("VideoScreen creation cancelled by event listener");
+        }
 
         List<ServerVideoScreen> newScreens = new ArrayList<>(player.screens());
         newScreens.add(screen);
@@ -150,13 +223,29 @@ public class VideoPlayerService {
     }
 
     public void deleteScreen(Player actor, UUID playerId, UUID screenId) {
-        ServerVideoPlayer player = requireManage(actor, playerId);
+        requireManage(actor, playerId);
+        deleteScreenSystem(actor, playerId, screenId);
+    }
+
+    public void deleteScreenSystem(Player actor, UUID playerId, UUID screenId) {
+        ServerVideoPlayer player = findPlayer(playerId)
+            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
+
+        ServerVideoScreen targetScreen = player.screens().stream()
+            .filter(s -> s.id().equals(screenId))
+            .findFirst()
+            .orElseThrow(() -> new NoSuchElementException(actor != null
+                ? Messages.get("err.screen_not_found", actor, screenId)
+                : "Screen not found: " + screenId));
+
+        VideoScreenDeleteEvent event = new VideoScreenDeleteEvent(player, actor, targetScreen);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled()) {
+            throw new IllegalStateException("VideoScreen deletion cancelled by event listener");
+        }
 
         List<ServerVideoScreen> newScreens = new ArrayList<>(player.screens());
-        boolean removed = newScreens.removeIf(s -> s.id().equals(screenId));
-        if (!removed) {
-            throw new NoSuchElementException(Messages.get("err.screen_not_found", actor, screenId));
-        }
+        newScreens.removeIf(s -> s.id().equals(screenId));
 
         int index = findPlayerIndex(playerId);
         savedData.players().set(index, player.withScreens(newScreens));
@@ -164,7 +253,13 @@ public class VideoPlayerService {
     }
 
     public ServerVideoScreen renameScreen(Player actor, UUID playerId, UUID screenId, String newName) {
-        ServerVideoPlayer player = requireManage(actor, playerId);
+        requireManage(actor, playerId);
+        return renameScreenSystem(actor, playerId, screenId, newName);
+    }
+
+    public ServerVideoScreen renameScreenSystem(Player actor, UUID playerId, UUID screenId, String newName) {
+        ServerVideoPlayer player = findPlayer(playerId)
+            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
 
         int screenIdx = screenIndex(player, screenId);
         List<ServerVideoScreen> newScreens = new ArrayList<>(player.screens());
@@ -177,11 +272,54 @@ public class VideoPlayerService {
     }
 
     public ServerVideoScreen updateScreenUv(Player actor, UUID playerId, UUID screenId, UvTransform uvTransform) {
-        ServerVideoPlayer player = requireManage(actor, playerId);
+        requireManage(actor, playerId);
+        return updateScreenUvSystem(actor, playerId, screenId, uvTransform);
+    }
+
+    public ServerVideoScreen updateScreenUvSystem(Player actor, UUID playerId, UUID screenId, UvTransform uvTransform) {
+        ServerVideoPlayer player = findPlayer(playerId)
+            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
 
         int screenIdx = screenIndex(player, screenId);
+        ServerVideoScreen screen = player.screens().get(screenIdx);
+
+        VideoScreenTransformChangeEvent event = new VideoScreenTransformChangeEvent(
+            player, actor, screen, uvTransform, null, null);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled()) {
+            throw new IllegalStateException("Screen UV update cancelled by event listener");
+        }
+
         List<ServerVideoScreen> newScreens = new ArrayList<>(player.screens());
-        newScreens.set(screenIdx, player.screens().get(screenIdx).withUvTransform(uvTransform));
+        newScreens.set(screenIdx, screen.withUvTransform(event.getNewUv()));
+
+        int playerIdx = findPlayerIndex(playerId);
+        savedData.players().set(playerIdx, player.withScreens(newScreens));
+        markDirty();
+        return newScreens.get(screenIdx);
+    }
+
+    public ServerVideoScreen updateScreenRadius(Player actor, UUID playerId, UUID screenId, double radius) {
+        requireManage(actor, playerId);
+        return updateScreenRadiusSystem(actor, playerId, screenId, radius);
+    }
+
+    public ServerVideoScreen updateScreenRadiusSystem(Player actor, UUID playerId, UUID screenId, double radius) {
+        ServerVideoPlayer player = findPlayer(playerId)
+            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
+
+        int screenIdx = screenIndex(player, screenId);
+        ServerVideoScreen screen = player.screens().get(screenIdx);
+
+        VideoScreenTransformChangeEvent event = new VideoScreenTransformChangeEvent(
+            player, actor, screen, null, radius, null);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled()) {
+            throw new IllegalStateException("Screen radius update cancelled by event listener");
+        }
+
+        List<ServerVideoScreen> newScreens = new ArrayList<>(player.screens());
+        newScreens.set(screenIdx, screen.withRadius(event.getNewRadius()));
 
         int playerIdx = findPlayerIndex(playerId);
         savedData.players().set(playerIdx, player.withScreens(newScreens));
@@ -190,11 +328,26 @@ public class VideoPlayerService {
     }
 
     public ServerVideoScreen updateScreenChannel(Player actor, UUID playerId, UUID screenId, ScreenChannelState channelState) {
-        ServerVideoPlayer player = requireManage(actor, playerId);
+        requireManage(actor, playerId);
+        return updateScreenChannelSystem(actor, playerId, screenId, channelState);
+    }
+
+    public ServerVideoScreen updateScreenChannelSystem(Player actor, UUID playerId, UUID screenId, ScreenChannelState channelState) {
+        ServerVideoPlayer player = findPlayer(playerId)
+            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
 
         int screenIdx = screenIndex(player, screenId);
+        ServerVideoScreen screen = player.screens().get(screenIdx);
+
+        VideoScreenTransformChangeEvent event = new VideoScreenTransformChangeEvent(
+            player, actor, screen, null, null, channelState);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled()) {
+            throw new IllegalStateException("Screen channel update cancelled by event listener");
+        }
+
         List<ServerVideoScreen> newScreens = new ArrayList<>(player.screens());
-        newScreens.set(screenIdx, player.screens().get(screenIdx).withChannelState(channelState));
+        newScreens.set(screenIdx, screen.withChannelState(event.getNewChannelState()));
 
         int playerIdx = findPlayerIndex(playerId);
         savedData.players().set(playerIdx, player.withScreens(newScreens));
@@ -205,10 +358,23 @@ public class VideoPlayerService {
     // ==================== Playlist Management ====================
 
     public ServerVideoPlayer addVideo(Player actor, UUID playerId, VideoSource videoSource) {
-        ServerVideoPlayer player = requireManage(actor, playerId);
+        requireManage(actor, playerId);
+        return addVideoSystem(actor, playerId, videoSource);
+    }
+
+    public ServerVideoPlayer addVideoSystem(Player actor, UUID playerId, VideoSource videoSource) {
+        ServerVideoPlayer player = findPlayer(playerId)
+            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
+
+        int targetIndex = player.playlist().size();
+        VideoPlaylistAddEvent event = new VideoPlaylistAddEvent(player, actor, videoSource, targetIndex);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled()) {
+            throw new IllegalStateException("Video add cancelled by event listener");
+        }
 
         List<VideoSource> newPlaylist = new ArrayList<>(player.playlist());
-        newPlaylist.add(videoSource);
+        newPlaylist.add(event.getVideoSource());
 
         int index = findPlayerIndex(playerId);
         ServerVideoPlayer updated = player.withPlaylist(newPlaylist);
@@ -218,10 +384,25 @@ public class VideoPlayerService {
     }
 
     public ServerVideoPlayer removeVideo(Player actor, UUID playerId, int videoIndex) {
-        ServerVideoPlayer player = requireManage(actor, playerId);
+        requireManage(actor, playerId);
+        return removeVideoSystem(actor, playerId, videoIndex);
+    }
+
+    public ServerVideoPlayer removeVideoSystem(Player actor, UUID playerId, int videoIndex) {
+        ServerVideoPlayer player = findPlayer(playerId)
+            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
 
         if (videoIndex < 0 || videoIndex >= player.playlist().size()) {
-            throw new IndexOutOfBoundsException(Messages.get("err.video_index", actor, videoIndex));
+            throw new IndexOutOfBoundsException(actor != null
+                ? Messages.get("err.video_index", actor, videoIndex)
+                : "Video index out of bounds: " + videoIndex);
+        }
+
+        VideoSource removedSource = player.playlist().get(videoIndex);
+        VideoPlaylistRemoveEvent event = new VideoPlaylistRemoveEvent(player, actor, removedSource, videoIndex);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled()) {
+            throw new IllegalStateException("Video remove cancelled by event listener");
         }
 
         List<VideoSource> newPlaylist = new ArrayList<>(player.playlist());
@@ -235,11 +416,25 @@ public class VideoPlayerService {
     }
 
     public ServerVideoPlayer moveVideo(Player actor, UUID playerId, int fromIndex, int toIndex) {
-        ServerVideoPlayer player = requireManage(actor, playerId);
+        requireManage(actor, playerId);
+        return moveVideoSystem(actor, playerId, fromIndex, toIndex);
+    }
+
+    public ServerVideoPlayer moveVideoSystem(Player actor, UUID playerId, int fromIndex, int toIndex) {
+        ServerVideoPlayer player = findPlayer(playerId)
+            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
 
         List<VideoSource> playlist = player.playlist();
         if (fromIndex < 0 || fromIndex >= playlist.size() || toIndex < 0 || toIndex >= playlist.size()) {
-            throw new IndexOutOfBoundsException(Messages.get("err.index_bounds", actor, fromIndex, toIndex));
+            throw new IndexOutOfBoundsException(actor != null
+                ? Messages.get("err.index_bounds", actor, fromIndex, toIndex)
+                : "Index out of bounds: " + fromIndex + " -> " + toIndex);
+        }
+
+        VideoPlaylistReorderEvent event = new VideoPlaylistReorderEvent(player, actor, fromIndex, toIndex);
+        Bukkit.getPluginManager().callEvent(event);
+        if (event.isCancelled()) {
+            throw new IllegalStateException("Video reorder cancelled by event listener");
         }
 
         List<VideoSource> newPlaylist = new ArrayList<>(playlist);
@@ -261,7 +456,6 @@ public class VideoPlayerService {
         if (player.controlUsers().contains(targetUser)) {
             throw new IllegalArgumentException(Messages.get("cmd.grant.already_has", actor));
         }
-        // Cannot grant to owner (editors, first = owner)
         if (player.creator().equals(targetUser)) {
             throw new IllegalArgumentException(Messages.get("cmd.grant.is_owner", actor));
         }
@@ -287,19 +481,58 @@ public class VideoPlayerService {
 
     // ==================== Playback Control ====================
 
-    /** Set playback state. Requires control permission (admin/owner/controlUser). */
+    /** Set playback state with actor permission check. */
     public ServerVideoPlayer setPlaybackState(Player actor, UUID playerId, PlaybackState newState) {
-        ServerVideoPlayer player = requireControl(actor, playerId);
-
-        int index = findPlayerIndex(playerId);
-        savedData.players().set(index, player.withPlaybackState(newState));
-        markDirty();
-        return savedData.players().get(index);
+        requireControl(actor, playerId);
+        return setPlaybackStateSystem(actor, playerId, newState);
     }
 
-    /** Seek. Requires control permission. */
+    /** Set playback state without permission check (for API and internal calls). */
+    public ServerVideoPlayer setPlaybackStateSystem(Player actor, UUID playerId, PlaybackState newState) {
+        int index = findPlayerIndex(playerId);
+        if (index < 0) {
+            throw new NoSuchElementException("Video player not found: " + playerId);
+        }
+        ServerVideoPlayer player = savedData.players().get(index);
+        PlaybackState oldState = player.playbackState();
+
+        // 1. Check TrackChange event if currentIndex changed
+        if (oldState.currentIndex() != newState.currentIndex()) {
+            VideoPlayerTrackChangeEvent trackEvent = new VideoPlayerTrackChangeEvent(
+                player, actor, oldState.currentIndex(), newState.currentIndex()
+            );
+            Bukkit.getPluginManager().callEvent(trackEvent);
+            if (trackEvent.isCancelled()) {
+                throw new IllegalStateException("Track change cancelled by event listener");
+            }
+        }
+
+        // 2. Playback state change event
+        VideoPlayerPlaybackStateChangeEvent stateEvent = new VideoPlayerPlaybackStateChangeEvent(
+            player, actor, oldState, newState
+        );
+        Bukkit.getPluginManager().callEvent(stateEvent);
+        if (stateEvent.isCancelled()) {
+            throw new IllegalStateException("Playback state change cancelled by event listener");
+        }
+
+        PlaybackState finalState = stateEvent.getNewState();
+        ServerVideoPlayer updated = player.withPlaybackState(finalState);
+        savedData.players().set(index, updated);
+        markDirty();
+        return updated;
+    }
+
+    /** Seek with actor permission check. */
     public ServerVideoPlayer seek(Player actor, UUID playerId, int seekSeconds) {
-        ServerVideoPlayer player = requireControl(actor, playerId);
+        requireControl(actor, playerId);
+        return seekSystem(actor, playerId, seekSeconds);
+    }
+
+    /** Seek without permission check. */
+    public ServerVideoPlayer seekSystem(Player actor, UUID playerId, int seekSeconds) {
+        ServerVideoPlayer player = findPlayer(playerId)
+            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
 
         PlaybackState current = player.playbackState();
         PlaybackState newState = new PlaybackState(
@@ -311,7 +544,7 @@ public class VideoPlayerService {
             System.currentTimeMillis() / 1000
         );
 
-        return setPlaybackState(actor, playerId, newState);
+        return setPlaybackStateSystem(actor, playerId, newState);
     }
 
     /** Internal: set playback state without permission check (for tick/stop). */
@@ -387,7 +620,9 @@ public class VideoPlayerService {
                 screen.dimension(),
                 screen.vertices(),
                 screen.uvTransform(),
-                screen.channelState()
+                screen.channelState(),
+                screen.screenType(),
+                screen.radius()
             ));
         }
         return new VideoPlayerData(

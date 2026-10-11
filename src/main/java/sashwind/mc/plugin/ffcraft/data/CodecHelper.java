@@ -106,10 +106,12 @@ public final class CodecHelper {
         obj.addProperty("rotationDegrees", uv.rotationDegrees());
         obj.addProperty("flipU", uv.flipU());
         obj.addProperty("flipV", uv.flipV());
+        obj.addProperty("is3D", uv.is3D());
         return obj;
     }
 
     public static UvTransform decodeUvTransform(JsonObject obj) {
+        boolean is3D = obj.has("is3D") && obj.get("is3D").getAsBoolean();
         return new UvTransform(
             obj.get("offsetU").getAsDouble(),
             obj.get("offsetV").getAsDouble(),
@@ -117,7 +119,8 @@ public final class CodecHelper {
             obj.get("scaleV").getAsDouble(),
             obj.get("rotationDegrees").getAsDouble(),
             obj.get("flipU").getAsBoolean(),
-            obj.get("flipV").getAsBoolean()
+            obj.get("flipV").getAsBoolean(),
+            is3D
         );
     }
 
@@ -153,6 +156,8 @@ public final class CodecHelper {
         obj.add("vertices", verticesArr);
         obj.add("uvTransform", encodeUvTransform(screen.uvTransform()));
         obj.add("channelState", encodeScreenChannelState(screen.channelState()));
+        obj.addProperty("screenType", screen.screenType());
+        obj.addProperty("radius", screen.radius());
         return obj;
     }
 
@@ -162,6 +167,8 @@ public final class CodecHelper {
         for (JsonElement e : verticesArr) {
             vertices.add(decodeScreenVertex(e.getAsJsonObject()));
         }
+        int screenType = obj.has("screenType") ? obj.get("screenType").getAsInt() : 0;
+        double radius = obj.has("radius") ? obj.get("radius").getAsDouble() : 5.0;
         return new ServerVideoScreen(
             UUID.fromString(obj.get("id").getAsString()),
             UUID.fromString(obj.get("playerId").getAsString()),
@@ -169,7 +176,9 @@ public final class CodecHelper {
             obj.get("dimension").getAsString(),
             vertices,
             decodeUvTransform(obj.getAsJsonObject("uvTransform")),
-            decodeScreenChannelState(obj.getAsJsonObject("channelState"))
+            decodeScreenChannelState(obj.getAsJsonObject("channelState")),
+            screenType,
+            radius
         );
     }
 
@@ -295,6 +304,8 @@ public final class CodecHelper {
         obj.add("vertices", verticesArr);
         obj.add("uvTransform", encodeUvTransform(screen.uvTransform()));
         obj.add("channelState", encodeScreenChannelState(screen.channelState()));
+        obj.addProperty("screenType", screen.screenType());
+        obj.addProperty("radius", screen.radius());
         return obj;
     }
 
@@ -346,6 +357,8 @@ public final class CodecHelper {
         for (JsonElement e : verticesArr) {
             vertices.add(decodeScreenVertex(e.getAsJsonObject()));
         }
+        int screenType = obj.has("screenType") ? obj.get("screenType").getAsInt() : 0;
+        double radius = obj.has("radius") ? obj.get("radius").getAsDouble() : 5.0;
         return new VideoScreenData(
             UUID.fromString(obj.get("id").getAsString()),
             UUID.fromString(obj.get("playerId").getAsString()),
@@ -353,7 +366,9 @@ public final class CodecHelper {
             obj.get("dimension").getAsString(),
             vertices,
             decodeUvTransform(obj.getAsJsonObject("uvTransform")),
-            decodeScreenChannelState(obj.getAsJsonObject("channelState"))
+            decodeScreenChannelState(obj.getAsJsonObject("channelState")),
+            screenType,
+            radius
         );
     }
 
@@ -370,6 +385,7 @@ public final class CodecHelper {
     public static final String TYPE_SEEK = "seek";
     public static final String TYPE_UPDATE_SCREEN_UV = "update_screen_uv";
     public static final String TYPE_UPDATE_SCREEN_CHANNEL = "update_screen_channel";
+    public static final String TYPE_UPDATE_SCREEN_RADIUS = "update_screen_radius";
     public static final String TYPE_ADD_VIDEO = "add_video";
     public static final String TYPE_REMOVE_VIDEO = "remove_video";
     public static final String TYPE_MOVE_VIDEO = "move_video";

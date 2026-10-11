@@ -76,6 +76,7 @@ public class Networking implements PluginMessageListener {
                 case CodecHelper.TYPE_SEEK -> handleSeek(player, data);
                 case CodecHelper.TYPE_UPDATE_SCREEN_UV -> handleUpdateScreenUv(player, data);
                 case CodecHelper.TYPE_UPDATE_SCREEN_CHANNEL -> handleUpdateScreenChannel(player, data);
+                case CodecHelper.TYPE_UPDATE_SCREEN_RADIUS -> handleUpdateScreenRadius(player, data);
                 case CodecHelper.TYPE_ADD_VIDEO -> handleAddVideo(player, data);
                 case CodecHelper.TYPE_REMOVE_VIDEO -> handleRemoveVideo(player, data);
                 case CodecHelper.TYPE_MOVE_VIDEO -> handleMoveVideo(player, data);
@@ -114,7 +115,18 @@ public class Networking implements PluginMessageListener {
             vertices.add(CodecHelper.decodeScreenVertex(e.getAsJsonObject()));
         }
 
-        service.createScreen(player, new CreateScreenRequest(playerId, name, dimension, vertices));
+        int screenType = data.has("screenType") ? data.get("screenType").getAsInt() : 0;
+        double radius = data.has("radius") ? data.get("radius").getAsDouble() : 5.0;
+
+        service.createScreen(player, new CreateScreenRequest(playerId, name, dimension, vertices, screenType, radius));
+        syncAll();
+    }
+
+    private void handleUpdateScreenRadius(Player player, JsonObject data) {
+        UUID playerId = UUID.fromString(data.get("playerId").getAsString());
+        UUID screenId = UUID.fromString(data.get("screenId").getAsString());
+        double radius = data.get("radius").getAsDouble();
+        service.updateScreenRadius(player, playerId, screenId, radius);
         syncAll();
     }
 
