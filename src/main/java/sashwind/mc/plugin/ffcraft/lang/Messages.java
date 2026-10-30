@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.text.MessageFormat;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.logging.Level;
@@ -31,7 +32,7 @@ public final class Messages {
 
     private static Path dataFolder;
     private static Path langDir;
-    private static final Map<String, Properties> cache = new HashMap<>();
+    private static final Map<String, Properties> cache = new ConcurrentHashMap<>();
 
     private Messages() {}
 
@@ -109,7 +110,6 @@ public final class Messages {
 
     /** Reload all language files from disk. */
     public static void reload() {
-        cache.clear();
         loadAll();
     }
 
@@ -127,19 +127,21 @@ public final class Messages {
     // ── internals ────────────────────────────────────
 
     private static void loadAll() {
+        Map<String, Properties> fresh = new HashMap<>();
         // 1. Main language file: plugins/FFCraft/messages.properties
         Path main = dataFolder.resolve("messages.properties");
-        cache.put("messages", loadProps(main));
+        fresh.put("messages", loadProps(main));
 
         // 2. Language packs: plugins/FFCraft/lang/*.properties
         if (Files.isDirectory(langDir)) {
             try (DirectoryStream<Path> stream = Files.newDirectoryStream(langDir, "*.properties")) {
                 for (Path file : stream) {
                     String name = file.getFileName().toString().replace(".properties", "");
-                    cache.put(name, loadProps(file));
+                    fresh.put(name, loadProps(file));
                 }
             } catch (IOException ignored) {}
         }
+        cache.putAll(fresh);
     }
 
     private static Properties loadProps(Path file) {

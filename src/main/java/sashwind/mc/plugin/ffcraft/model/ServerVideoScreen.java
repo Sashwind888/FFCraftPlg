@@ -38,4 +38,12 @@ public record ServerVideoScreen(
     public ServerVideoScreen withRadius(double newRadius) {
         return new ServerVideoScreen(id, playerId, name, dimension, vertices, uvTransform, channelState, screenType, newRadius);
     }
+
+    public boolean isSphere() {
+        return screenType == 1;
+    }
+
+    public boolean isSpeaker() {
+        return screenType == 2;
+    }
 }

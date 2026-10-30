@@ -92,8 +92,10 @@ public class VideoPlayerService {
             throw new IllegalStateException("VideoPlayer creation cancelled by event listener");
         }
 
-        savedData.players().add(player);
-        markDirty();
+        synchronized (savedData) {
+            savedData.players().add(player);
+            markDirty();
+        }
         return player;
     }
 
@@ -107,20 +109,22 @@ public class VideoPlayerService {
 
     /** Deletes a player without permission check. */
     public void deletePlayerSystem(Player actor, UUID playerId) {
-        int index = findPlayerIndex(playerId);
-        if (index < 0) {
-            throw new NoSuchElementException(actor != null ? Messages.get("err.player_not_found", actor, playerId) : "Video player not found: " + playerId);
-        }
+        synchronized (savedData) {
+            int index = findPlayerIndex(playerId);
+            if (index < 0) {
+                throw new NoSuchElementException(actor != null ? Messages.get("err.player_not_found", actor, playerId) : "Video player not found: " + playerId);
+            }
 
-        ServerVideoPlayer player = savedData.players().get(index);
-        VideoPlayerDeleteEvent event = new VideoPlayerDeleteEvent(player, actor);
-        Bukkit.getPluginManager().callEvent(event);
-        if (event.isCancelled()) {
-            throw new IllegalStateException("VideoPlayer deletion cancelled by event listener");
-        }
+            ServerVideoPlayer player = savedData.players().get(index);
+            VideoPlayerDeleteEvent event = new VideoPlayerDeleteEvent(player, actor);
+            Bukkit.getPluginManager().callEvent(event);
+            if (event.isCancelled()) {
+                throw new IllegalStateException("VideoPlayer deletion cancelled by event listener");
+            }
 
-        savedData.players().remove(index);
-        markDirty();
+            savedData.players().remove(index);
+            markDirty();
+        }
     }
 
     /** Renames a player with actor permission check. */
@@ -131,22 +135,24 @@ public class VideoPlayerService {
 
     /** Renames a player without permission check. */
     public ServerVideoPlayer renamePlayerSystem(Player actor, UUID playerId, String newName) {
-        int index = findPlayerIndex(playerId);
-        if (index < 0) {
-            throw new NoSuchElementException("Video player not found: " + playerId);
-        }
-        ServerVideoPlayer player = savedData.players().get(index);
+        synchronized (savedData) {
+            int index = findPlayerIndex(playerId);
+            if (index < 0) {
+                throw new NoSuchElementException("Video player not found: " + playerId);
+            }
+            ServerVideoPlayer player = savedData.players().get(index);
 
-        VideoPlayerRenameEvent event = new VideoPlayerRenameEvent(player, actor, player.name(), newName);
-        Bukkit.getPluginManager().callEvent(event);
-        if (event.isCancelled()) {
-            throw new IllegalStateException("VideoPlayer rename cancelled by event listener");
-        }
+            VideoPlayerRenameEvent event = new VideoPlayerRenameEvent(player, actor, player.name(), newName);
+            Bukkit.getPluginManager().callEvent(event);
+            if (event.isCancelled()) {
+                throw new IllegalStateException("VideoPlayer rename cancelled by event listener");
+            }
 
-        ServerVideoPlayer updated = player.withName(event.getNewName());
-        savedData.players().set(index, updated);
-        markDirty();
-        return updated;
+            ServerVideoPlayer updated = player.withName(event.getNewName());
+            savedData.players().set(index, updated);
+            markDirty();
+            return updated;
+        }
     }
 
     /** Toggle public/private with actor permission check. */
@@ -159,22 +165,24 @@ public class VideoPlayerService {
 
     /** Toggle public/private without permission check. */
     public ServerVideoPlayer setPublicSystem(Player actor, UUID playerId, boolean isPublic) {
-        int index = findPlayerIndex(playerId);
-        if (index < 0) {
-            throw new NoSuchElementException("Video player not found: " + playerId);
-        }
-        ServerVideoPlayer player = savedData.players().get(index);
+        synchronized (savedData) {
+            int index = findPlayerIndex(playerId);
+            if (index < 0) {
+                throw new NoSuchElementException("Video player not found: " + playerId);
+            }
+            ServerVideoPlayer player = savedData.players().get(index);
 
-        VideoPlayerVisibilityChangeEvent event = new VideoPlayerVisibilityChangeEvent(player, actor, player.isPublic(), isPublic);
-        Bukkit.getPluginManager().callEvent(event);
-        if (event.isCancelled()) {
-            throw new IllegalStateException("VideoPlayer visibility change cancelled by event listener");
-        }
+            VideoPlayerVisibilityChangeEvent event = new VideoPlayerVisibilityChangeEvent(player, actor, player.isPublic(), isPublic);
+            Bukkit.getPluginManager().callEvent(event);
+            if (event.isCancelled()) {
+                throw new IllegalStateException("VideoPlayer visibility change cancelled by event listener");
+            }
 
-        ServerVideoPlayer updated = player.withPublic(event.isNewPublic());
-        savedData.players().set(index, updated);
-        markDirty();
-        return updated;
+            ServerVideoPlayer updated = player.withPublic(event.isNewPublic());
+            savedData.players().set(index, updated);
+            markDirty();
+            return updated;
+        }
     }
 
     // ==================== Screen Management ====================
@@ -188,13 +196,14 @@ public class VideoPlayerService {
         ServerVideoPlayer player = findPlayer(request.playerId())
             .orElseThrow(() -> new NoSuchElementException("Video player not found: " + request.playerId()));
 
-        int minVerts = (request.screenType() == 1) ? 1 : 3;
+        int minVerts = (request.screenType() == 1 || request.screenType() == 2) ? 1 : 3;
         if (request.vertices().size() < minVerts || request.vertices().size() > 64) {
             throw new IllegalArgumentException(actor != null
                 ? Messages.get("err.screen_vertices", actor, request.vertices().size())
                 : "Vertices count must be between " + minVerts + " and 64");
         }
 
+        double rad = (request.screenType() == 2 && request.radius() <= 0.01) ? 16.0 : request.radius();
         ServerVideoScreen screen = new ServerVideoScreen(
             UUID.randomUUID(),
             request.playerId(),
@@ -204,7 +213,7 @@ public class VideoPlayerService {
             UvTransform.createDefault(request.screenType()),
             ScreenChannelState.createDefault(),
             request.screenType(),
-            request.radius()
+            rad
         );
 
         VideoScreenCreateEvent event = new VideoScreenCreateEvent(player, actor, screen);
@@ -213,12 +222,17 @@ public class VideoPlayerService {
             throw new IllegalStateException("VideoScreen creation cancelled by event listener");
         }
 
-        List<ServerVideoScreen> newScreens = new ArrayList<>(player.screens());
-        newScreens.add(screen);
-
-        int index = findPlayerIndex(request.playerId());
-        savedData.players().set(index, player.withScreens(newScreens));
-        markDirty();
+        synchronized (savedData) {
+            int index = findPlayerIndex(request.playerId());
+            if (index < 0) {
+                throw new NoSuchElementException("Video player not found: " + request.playerId());
+            }
+            ServerVideoPlayer current = savedData.players().get(index);
+            List<ServerVideoScreen> newScreens = new ArrayList<>(current.screens());
+            newScreens.add(screen);
+            savedData.players().set(index, current.withScreens(newScreens));
+            markDirty();
+        }
         return screen;
     }
 
@@ -228,28 +242,33 @@ public class VideoPlayerService {
     }
 
     public void deleteScreenSystem(Player actor, UUID playerId, UUID screenId) {
-        ServerVideoPlayer player = findPlayer(playerId)
-            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
+        synchronized (savedData) {
+            ServerVideoPlayer player = findPlayer(playerId)
+                .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
 
-        ServerVideoScreen targetScreen = player.screens().stream()
-            .filter(s -> s.id().equals(screenId))
-            .findFirst()
-            .orElseThrow(() -> new NoSuchElementException(actor != null
-                ? Messages.get("err.screen_not_found", actor, screenId)
-                : "Screen not found: " + screenId));
+            ServerVideoScreen targetScreen = player.screens().stream()
+                .filter(s -> s.id().equals(screenId))
+                .findFirst()
+                .orElseThrow(() -> new NoSuchElementException(actor != null
+                    ? Messages.get("err.screen_not_found", actor, screenId)
+                    : "Screen not found: " + screenId));
 
-        VideoScreenDeleteEvent event = new VideoScreenDeleteEvent(player, actor, targetScreen);
-        Bukkit.getPluginManager().callEvent(event);
-        if (event.isCancelled()) {
-            throw new IllegalStateException("VideoScreen deletion cancelled by event listener");
+            VideoScreenDeleteEvent event = new VideoScreenDeleteEvent(player, actor, targetScreen);
+            Bukkit.getPluginManager().callEvent(event);
+            if (event.isCancelled()) {
+                throw new IllegalStateException("VideoScreen deletion cancelled by event listener");
+            }
+
+            int index = findPlayerIndex(playerId);
+            if (index < 0) {
+                throw new NoSuchElementException("Video player not found: " + playerId);
+            }
+            ServerVideoPlayer current = savedData.players().get(index);
+            List<ServerVideoScreen> newScreens = new ArrayList<>(current.screens());
+            newScreens.removeIf(s -> s.id().equals(screenId));
+            savedData.players().set(index, current.withScreens(newScreens));
+            markDirty();
         }
-
-        List<ServerVideoScreen> newScreens = new ArrayList<>(player.screens());
-        newScreens.removeIf(s -> s.id().equals(screenId));
-
-        int index = findPlayerIndex(playerId);
-        savedData.players().set(index, player.withScreens(newScreens));
-        markDirty();
     }
 
     public ServerVideoScreen renameScreen(Player actor, UUID playerId, UUID screenId, String newName) {
@@ -258,17 +277,20 @@ public class VideoPlayerService {
     }
 
     public ServerVideoScreen renameScreenSystem(Player actor, UUID playerId, UUID screenId, String newName) {
-        ServerVideoPlayer player = findPlayer(playerId)
-            .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
+        synchronized (savedData) {
+            ServerVideoPlayer player = findPlayer(playerId)
+                .orElseThrow(() -> new NoSuchElementException("Video player not found: " + playerId));
 
-        int screenIdx = screenIndex(player, screenId);
-        List<ServerVideoScreen> newScreens = new ArrayList<>(player.screens());
-        newScreens.set(screenIdx, player.screens().get(screenIdx).withName(newName));
+            int screenIdx = screenIndex(player, screenId);
+            List<ServerVideoScreen> newScreens = new ArrayList<>(player.screens());
+            ServerVideoScreen renamed = player.screens().get(screenIdx).withName(newName);
+            newScreens.set(screenIdx, renamed);
 
-        int playerIdx = findPlayerIndex(playerId);
-        savedData.players().set(playerIdx, player.withScreens(newScreens));
-        markDirty();
-        return newScreens.get(screenIdx);
+            int playerIdx = findPlayerIndex(playerId);
+            savedData.players().set(playerIdx, player.withScreens(newScreens));
+            markDirty();
+            return renamed;
+        }
     }
 
     public ServerVideoScreen updateScreenUv(Player actor, UUID playerId, UUID screenId, UvTransform uvTransform) {
@@ -290,13 +312,21 @@ public class VideoPlayerService {
             throw new IllegalStateException("Screen UV update cancelled by event listener");
         }
 
-        List<ServerVideoScreen> newScreens = new ArrayList<>(player.screens());
-        newScreens.set(screenIdx, screen.withUvTransform(event.getNewUv()));
+        synchronized (savedData) {
+            int playerIdx = findPlayerIndex(playerId);
+            if (playerIdx < 0) {
+                throw new NoSuchElementException("Video player not found: " + playerId);
+            }
+            ServerVideoPlayer current = savedData.players().get(playerIdx);
+            int currentScreenIdx = screenIndex(current, screenId);
+            List<ServerVideoScreen> newScreens = new ArrayList<>(current.screens());
+            ServerVideoScreen updatedScreen = current.screens().get(currentScreenIdx).withUvTransform(event.getNewUv());
+            newScreens.set(currentScreenIdx, updatedScreen);
 
-        int playerIdx = findPlayerIndex(playerId);
-        savedData.players().set(playerIdx, player.withScreens(newScreens));
-        markDirty();
-        return newScreens.get(screenIdx);
+            savedData.players().set(playerIdx, current.withScreens(newScreens));
+            markDirty();
+            return updatedScreen;
+        }
     }
 
     public ServerVideoScreen updateScreenRadius(Player actor, UUID playerId, UUID screenId, double radius) {
@@ -318,13 +348,21 @@ public class VideoPlayerService {
             throw new IllegalStateException("Screen radius update cancelled by event listener");
         }
 
-        List<ServerVideoScreen> newScreens = new ArrayList<>(player.screens());
-        newScreens.set(screenIdx, screen.withRadius(event.getNewRadius()));
+        synchronized (savedData) {
+            int playerIdx = findPlayerIndex(playerId);
+            if (playerIdx < 0) {
+                throw new NoSuchElementException("Video player not found: " + playerId);
+            }
+            ServerVideoPlayer current = savedData.players().get(playerIdx);
+            int currentScreenIdx = screenIndex(current, screenId);
+            List<ServerVideoScreen> newScreens = new ArrayList<>(current.screens());
+            ServerVideoScreen updatedScreen = current.screens().get(currentScreenIdx).withRadius(event.getNewRadius());
+            newScreens.set(currentScreenIdx, updatedScreen);
 
-        int playerIdx = findPlayerIndex(playerId);
-        savedData.players().set(playerIdx, player.withScreens(newScreens));
-        markDirty();
-        return newScreens.get(screenIdx);
+            savedData.players().set(playerIdx, current.withScreens(newScreens));
+            markDirty();
+            return updatedScreen;
+        }
     }
 
     public ServerVideoScreen updateScreenChannel(Player actor, UUID playerId, UUID screenId, ScreenChannelState channelState) {
@@ -346,13 +384,21 @@ public class VideoPlayerService {
             throw new IllegalStateException("Screen channel update cancelled by event listener");
         }
 
-        List<ServerVideoScreen> newScreens = new ArrayList<>(player.screens());
-        newScreens.set(screenIdx, screen.withChannelState(event.getNewChannelState()));
+        synchronized (savedData) {
+            int playerIdx = findPlayerIndex(playerId);
+            if (playerIdx < 0) {
+                throw new NoSuchElementException("Video player not found: " + playerId);
+            }
+            ServerVideoPlayer current = savedData.players().get(playerIdx);
+            int currentScreenIdx = screenIndex(current, screenId);
+            List<ServerVideoScreen> newScreens = new ArrayList<>(current.screens());
+            ServerVideoScreen updatedScreen = current.screens().get(currentScreenIdx).withChannelState(event.getNewChannelState());
+            newScreens.set(currentScreenIdx, updatedScreen);
 
-        int playerIdx = findPlayerIndex(playerId);
-        savedData.players().set(playerIdx, player.withScreens(newScreens));
-        markDirty();
-        return newScreens.get(screenIdx);
+            savedData.players().set(playerIdx, current.withScreens(newScreens));
+            markDirty();
+            return updatedScreen;
+        }
     }
 
     // ==================== Playlist Management ====================
@@ -373,14 +419,20 @@ public class VideoPlayerService {
             throw new IllegalStateException("Video add cancelled by event listener");
         }
 
-        List<VideoSource> newPlaylist = new ArrayList<>(player.playlist());
-        newPlaylist.add(event.getVideoSource());
+        synchronized (savedData) {
+            int index = findPlayerIndex(playerId);
+            if (index < 0) {
+                throw new NoSuchElementException("Video player not found: " + playerId);
+            }
+            ServerVideoPlayer current = savedData.players().get(index);
+            List<VideoSource> newPlaylist = new ArrayList<>(current.playlist());
+            newPlaylist.add(event.getVideoSource());
 
-        int index = findPlayerIndex(playerId);
-        ServerVideoPlayer updated = player.withPlaylist(newPlaylist);
-        savedData.players().set(index, updated);
-        markDirty();
-        return updated;
+            ServerVideoPlayer updated = current.withPlaylist(newPlaylist);
+            savedData.players().set(index, updated);
+            markDirty();
+            return updated;
+        }
     }
 
     public ServerVideoPlayer removeVideo(Player actor, UUID playerId, int videoIndex) {
@@ -405,14 +457,23 @@ public class VideoPlayerService {
             throw new IllegalStateException("Video remove cancelled by event listener");
         }
 
-        List<VideoSource> newPlaylist = new ArrayList<>(player.playlist());
-        newPlaylist.remove(videoIndex);
+        synchronized (savedData) {
+            int idx = findPlayerIndex(playerId);
+            if (idx < 0) {
+                throw new NoSuchElementException("Video player not found: " + playerId);
+            }
+            ServerVideoPlayer current = savedData.players().get(idx);
+            if (videoIndex < 0 || videoIndex >= current.playlist().size()) {
+                throw new IndexOutOfBoundsException("Video index out of bounds: " + videoIndex);
+            }
+            List<VideoSource> newPlaylist = new ArrayList<>(current.playlist());
+            newPlaylist.remove(videoIndex);
 
-        int idx = findPlayerIndex(playerId);
-        ServerVideoPlayer updated = player.withPlaylist(newPlaylist);
-        savedData.players().set(idx, updated);
-        markDirty();
-        return updated;
+            ServerVideoPlayer updated = current.withPlaylist(newPlaylist);
+            savedData.players().set(idx, updated);
+            markDirty();
+            return updated;
+        }
     }
 
     public ServerVideoPlayer moveVideo(Player actor, UUID playerId, int fromIndex, int toIndex) {
@@ -437,15 +498,21 @@ public class VideoPlayerService {
             throw new IllegalStateException("Video reorder cancelled by event listener");
         }
 
-        List<VideoSource> newPlaylist = new ArrayList<>(playlist);
-        VideoSource moved = newPlaylist.remove(fromIndex);
-        newPlaylist.add(toIndex, moved);
+        synchronized (savedData) {
+            int idx = findPlayerIndex(playerId);
+            if (idx < 0) {
+                throw new NoSuchElementException("Video player not found: " + playerId);
+            }
+            ServerVideoPlayer current = savedData.players().get(idx);
+            List<VideoSource> newPlaylist = new ArrayList<>(current.playlist());
+            VideoSource moved = newPlaylist.remove(fromIndex);
+            newPlaylist.add(toIndex, moved);
 
-        int idx = findPlayerIndex(playerId);
-        ServerVideoPlayer updated = player.withPlaylist(newPlaylist);
-        savedData.players().set(idx, updated);
-        markDirty();
-        return updated;
+            ServerVideoPlayer updated = current.withPlaylist(newPlaylist);
+            savedData.players().set(idx, updated);
+            markDirty();
+            return updated;
+        }
     }
 
     // ==================== Permissions Grant/Revoke ====================
@@ -459,11 +526,17 @@ public class VideoPlayerService {
         if (player.creator().equals(targetUser)) {
             throw new IllegalArgumentException(Messages.get("cmd.grant.is_owner", actor));
         }
-        int index = findPlayerIndex(playerId);
-        ServerVideoPlayer updated = player.grantControl(targetUser);
-        savedData.players().set(index, updated);
-        markDirty();
-        return updated;
+        synchronized (savedData) {
+            int index = findPlayerIndex(playerId);
+            if (index < 0) {
+                throw new NoSuchElementException("Video player not found: " + playerId);
+            }
+            ServerVideoPlayer current = savedData.players().get(index);
+            ServerVideoPlayer updated = current.grantControl(targetUser);
+            savedData.players().set(index, updated);
+            markDirty();
+            return updated;
+        }
     }
 
     /** Revoke ffcraft.control.<playerId> from a user. Actor must be admin or owner. */
@@ -472,11 +545,17 @@ public class VideoPlayerService {
         if (!player.controlUsers().contains(targetUser)) {
             throw new IllegalArgumentException(Messages.get("cmd.revoke.no_control", actor));
         }
-        int index = findPlayerIndex(playerId);
-        ServerVideoPlayer updated = player.revokeControl(targetUser);
-        savedData.players().set(index, updated);
-        markDirty();
-        return updated;
+        synchronized (savedData) {
+            int index = findPlayerIndex(playerId);
+            if (index < 0) {
+                throw new NoSuchElementException("Video player not found: " + playerId);
+            }
+            ServerVideoPlayer current = savedData.players().get(index);
+            ServerVideoPlayer updated = current.revokeControl(targetUser);
+            savedData.players().set(index, updated);
+            markDirty();
+            return updated;
+        }
     }
 
     // ==================== Playback Control ====================
@@ -517,10 +596,17 @@ public class VideoPlayerService {
         }
 
         PlaybackState finalState = stateEvent.getNewState();
-        ServerVideoPlayer updated = player.withPlaybackState(finalState);
-        savedData.players().set(index, updated);
-        markDirty();
-        return updated;
+        synchronized (savedData) {
+            int currentIdx = findPlayerIndex(playerId);
+            if (currentIdx < 0) {
+                throw new NoSuchElementException("Video player not found: " + playerId);
+            }
+            ServerVideoPlayer current = savedData.players().get(currentIdx);
+            ServerVideoPlayer updated = current.withPlaybackState(finalState);
+            savedData.players().set(currentIdx, updated);
+            markDirty();
+            return updated;
+        }
     }
 
     /** Seek with actor permission check. */
@@ -549,34 +635,40 @@ public class VideoPlayerService {
 
     /** Internal: set playback state without permission check (for tick/stop). */
     ServerVideoPlayer setPlaybackStateInternal(UUID playerId, PlaybackState newState) {
-        int index = findPlayerIndex(playerId);
-        if (index < 0) return null;
-        ServerVideoPlayer player = savedData.players().get(index);
-        savedData.players().set(index, player.withPlaybackState(newState));
-        markDirty();
-        return savedData.players().get(index);
+        synchronized (savedData) {
+            int index = findPlayerIndex(playerId);
+            if (index < 0) return null;
+            ServerVideoPlayer player = savedData.players().get(index);
+            savedData.players().set(index, player.withPlaybackState(newState));
+            markDirty();
+            return savedData.players().get(index);
+        }
     }
 
     public void stopAllPlayback() {
-        for (int i = 0; i < savedData.players().size(); i++) {
-            ServerVideoPlayer player = savedData.players().get(i);
-            PlaybackState stopped = player.playbackState().withStatus(PlaybackStatus.STOPPED);
-            savedData.players().set(i, player.withPlaybackState(stopped));
+        synchronized (savedData) {
+            for (int i = 0; i < savedData.players().size(); i++) {
+                ServerVideoPlayer player = savedData.players().get(i);
+                PlaybackState stopped = player.playbackState().withStatus(PlaybackStatus.STOPPED);
+                savedData.players().set(i, player.withPlaybackState(stopped));
+            }
+            markDirty();
         }
-        markDirty();
     }
 
     public void tickProgress() {
-        boolean changed = false;
-        for (int i = 0; i < savedData.players().size(); i++) {
-            ServerVideoPlayer player = savedData.players().get(i);
-            if (player.playbackState().status() == PlaybackStatus.PLAYING) {
-                savedData.players().set(i, player.withPlaybackState(player.playbackState().tickProgress()));
-                changed = true;
+        synchronized (savedData) {
+            boolean changed = false;
+            for (int i = 0; i < savedData.players().size(); i++) {
+                ServerVideoPlayer player = savedData.players().get(i);
+                if (player.playbackState().status() == PlaybackStatus.PLAYING) {
+                    savedData.players().set(i, player.withPlaybackState(player.playbackState().tickProgress()));
+                    changed = true;
+                }
             }
-        }
-        if (changed) {
-            markDirty();
+            if (changed) {
+                markDirty();
+            }
         }
     }
 

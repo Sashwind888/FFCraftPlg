@@ -101,7 +101,7 @@ public class FFCraftAPIImpl implements FFCraftAPI {
     @Override
     public void setVolume(UUID playerId, int volume) {
         ServerVideoPlayer player = getPlayerOrThrow(playerId);
-        int clamped = Math.max(0, Math.min(100, volume));
+        int clamped = Math.max(0, Math.min(300, volume));
         PlaybackState updated = player.playbackState().withVolume(clamped);
         service.setPlaybackStateSystem(null, playerId, updated);
         networking.syncAll();

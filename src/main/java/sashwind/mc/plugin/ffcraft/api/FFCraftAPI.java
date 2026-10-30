@@ -78,7 +78,7 @@ public interface FFCraftAPI {
     void seek(UUID playerId, int seconds);
 
     /**
-     * Sets the volume (0 - 100) of the video player.
+     * Sets the volume (0 - 300) of the video player.
      */
     void setVolume(UUID playerId, int volume);
 

@@ -3,6 +3,7 @@ version: '${project.version}'
 main: sashwind.mc.plugin.ffcraft.FFCraft
 api-version: '1.18'
 load: STARTUP
+folia-supported: true
 authors: [ Sashwind ]
 description: Server-side plugin for FFCraft client mod - manage video players, screens, and playlists
 

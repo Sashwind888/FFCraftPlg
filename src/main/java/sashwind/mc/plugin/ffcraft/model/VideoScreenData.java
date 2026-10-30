@@ -16,6 +16,7 @@ public record VideoScreenData(
 ) {
     public static final int TYPE_POLYGON = 0;
     public static final int TYPE_SPHERE = 1;
+    public static final int TYPE_SPEAKER = 2;
 
     public VideoScreenData(UUID id, UUID playerId, String name, String dimension,
                            List<ScreenVertex> vertices, UvTransform uvTransform, ScreenChannelState channelState) {
@@ -24,5 +25,9 @@ public record VideoScreenData(
 
     public boolean isSphere() {
         return screenType == TYPE_SPHERE;
+    }
+
+    public boolean isSpeaker() {
+        return screenType == TYPE_SPEAKER;
     }
 }

@@ -121,7 +121,7 @@ playerOpt.ifPresent(player -> {
     api.addVideo(playerId, "https://example.com/video.mp4", 1920, 1080, 30);
 
     // 3. 播放控制（自动同步客户端）
-    api.setVolume(playerId, 80);     // 调整音量 (0~100)
+    api.setVolume(playerId, 80);     // 调整音量 (0~300)
     api.playIndex(playerId, 0);      // 播放指定索引并开始
     api.play(playerId);              // 播放/继续
     api.pause(playerId);             // 暂停
